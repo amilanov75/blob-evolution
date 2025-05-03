@@ -1,0 +1,3145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blob Evolution (Standalone)</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #000;
+        }
+        
+        #gameCanvas {
+            background: #fff;
+            width: 1280px;
+            height: 720px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    
+    <script>
+        // Canvas class
+        class Canvas {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.setCanvasSize();
+                window.addEventListener('resize', () => this.setCanvasSize());
+            }
+
+            setCanvasSize() {
+                this.canvas.width = 1280;
+                this.canvas.height = 720;
+            }
+
+            clear() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            }
+        }
+
+        // Biome class
+        class Biome {
+            constructor(type, color, temperatureEffect, resources) {
+                this.type = type;
+                this.color = color;
+                this.temperatureEffect = temperatureEffect; // Effect on blob temperature in Celsius
+                this.resources = resources; // Resources available in this biome
+            }
+        }
+
+        // Inventory Item class
+        class InventoryItem {
+            constructor(type, name, description, rarity = 'common', drawIcon = null) {
+                this.type = type;
+                this.name = name;
+                this.description = description;
+                this.quantity = 1;
+                this.rarity = rarity;
+                this.drawIcon = drawIcon || ((ctx, x, y, size) => {
+                    // Default icon if no custom drawing function provided
+                    console.log('Using default icon for:', name);
+                    ctx.fillStyle = this.getIconColor();
+                    ctx.fillRect(x + 5, y + 5, size - 10, size - 10);
+                });
+                console.log('Created InventoryItem:', name, 'Has custom drawIcon?', !!drawIcon);
+            }
+            
+            getIconColor() {
+                switch(this.rarity) {
+                    case 'common': return '#AAAAAA';
+                    case 'uncommon': return '#55AA55';
+                    case 'rare': return '#5555FF';
+                    case 'epic': return '#AA55AA';
+                    case 'legendary': return '#FFAA00';
+                    default: return '#FFFFFF';
+                }
+            }
+        }
+
+        // Inventory class to manage the blob's items
+        class Inventory {
+            constructor() {
+                this.items = {};
+                this.selectedItem = null;
+                this.visible = true;
+                this.maxSlots = 12;
+                console.log('Inventory created');
+            }
+            
+            toggleVisibility() {
+                // No longer needed, but kept for compatibility
+                this.visible = true;
+            }
+            
+            addItem(item) {
+                console.log('Adding item:', item);
+                console.log('Item has drawIcon?', !!item.drawIcon);
+                
+                if (this.items[item.name]) {
+                    this.items[item.name].quantity += (item.quantity || 1);
+                    console.log(`Increased quantity of ${item.name} to ${this.items[item.name].quantity}`);
+                    return true;
+                } else if (Object.keys(this.items).length < this.maxSlots) {
+                    if (!item.hasOwnProperty('quantity')) {
+                        item.quantity = 1;
+                    }
+                    this.items[item.name] = item;
+                    console.log(`Added new item ${item.name} to inventory`, item);
+                    return true;
+                }
+                console.log('Inventory full, cannot add item:', item.name);
+                return false;
+            }
+            
+            removeItem(itemName, quantity) {
+                if (quantity === undefined) quantity = 1;
+                if (this.items[itemName]) {
+                    this.items[itemName].quantity -= quantity;
+                    if (this.items[itemName].quantity <= 0) {
+                        delete this.items[itemName];
+                        if (this.selectedItem === itemName) {
+                            this.selectedItem = null;
+                        }
+                    }
+                    return true;
+                }
+                return false;
+            }
+            
+            // Get all building materials
+            getBuildingMaterials() {
+                var materials = {};
+                for (var name in this.items) {
+                    var item = this.items[name];
+                    if (item.type === 'resource') {
+                        materials[name] = item.quantity;
+                    }
+                }
+                return materials;
+            }
+            
+            // Method to upgrade inventory capacity (increases when blob evolves)
+            upgradeCapacity(amount) {
+                this.maxSlots += amount;
+            }
+            
+            draw(ctx, canvasWidth, canvasHeight) {
+                const itemSize = 40;
+                const padding = 10;
+                const bottomPadding = 20;
+                const itemsPerRow = 6;
+                
+                let itemIndex = 0;
+                for (const name in this.items) {
+                    const item = this.items[name];
+                    
+                    const row = Math.floor(itemIndex / itemsPerRow);
+                    const col = itemIndex % itemsPerRow;
+                    
+                    // Use the same position calculation as in handleClick
+                    const x = padding + col * (itemSize + padding);
+                    const y = canvasHeight - bottomPadding - (itemSize + padding) * (row + 1);
+                    
+                    // Draw item background with gradient
+                    const gradient = ctx.createLinearGradient(x, y, x, y + itemSize);
+                    gradient.addColorStop(0, 'rgba(0, 0, 0, 0.7)');
+                    gradient.addColorStop(1, 'rgba(20, 20, 20, 0.7)');
+                    ctx.fillStyle = gradient;
+                    ctx.fillRect(x, y, itemSize, itemSize);
+                    
+                    // Draw item icon using the custom drawing function
+                    if (item.drawIcon) {
+                        try {
+                            item.drawIcon(ctx, x, y, itemSize);
+                        } catch (error) {
+                            console.error('Error drawing icon for', name, error);
+                            // Fallback to default drawing
+                            ctx.fillStyle = '#FF0000';
+                            ctx.fillRect(x + 5, y + 5, itemSize - 10, itemSize - 10);
+                        }
+                    } else {
+                        ctx.fillStyle = '#FF0000';
+                        ctx.fillRect(x + 5, y + 5, itemSize - 10, itemSize - 10);
+                    }
+                    
+                    // Draw border (highlighted if selected)
+                    ctx.lineWidth = this.selectedItem === name ? 3 : 1;
+                    ctx.strokeStyle = this.selectedItem === name ? '#FFFF00' : '#888888';
+                    ctx.strokeRect(x, y, itemSize, itemSize);
+                    
+                    // Draw quantity with background
+                    const quantityBg = ctx.createLinearGradient(x, y + itemSize - 15, x + 20, y + itemSize);
+                    quantityBg.addColorStop(0, 'rgba(0, 0, 0, 0.8)');
+                    quantityBg.addColorStop(1, 'rgba(20, 20, 20, 0.8)');
+                    ctx.fillStyle = quantityBg;
+                    ctx.fillRect(x, y + itemSize - 15, 20, 15);
+                    
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.font = '12px Arial';
+                    ctx.textAlign = 'left';
+                    ctx.fillText(item.quantity, x + 4, y + itemSize - 3);
+                    
+                    // Draw item name on hover or if selected
+                    if (this.selectedItem === name) {
+                        // Draw item details BELOW the item instead of above
+                        const detailsY = y + itemSize + 10;
+                        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                        ctx.fillRect(x, detailsY, 150, 50);
+                        
+                        ctx.fillStyle = '#FFFFFF';
+                        ctx.font = '14px Arial';
+                        ctx.fillText(item.name + ' (' + item.rarity + ')', x + 5, detailsY + 20);
+                        ctx.font = '12px Arial';
+                        ctx.fillText(item.description, x + 5, detailsY + 40);
+                    }
+                    
+                    itemIndex++;
+                }
+            }
+            
+            // Method to handle click on inventory
+            handleClick(x, y, canvasWidth, canvasHeight) {
+                const itemSize = 40;
+                const padding = 10;
+                const bottomPadding = 20;
+                const itemsPerRow = 6;
+                
+                let itemIndex = 0;
+                for (const name in this.items) {
+                    const row = Math.floor(itemIndex / itemsPerRow);
+                    const col = itemIndex % itemsPerRow;
+                    
+                    const itemX = padding + col * (itemSize + padding);
+                    const itemY = canvasHeight - bottomPadding - (itemSize + padding) * (row + 1);
+                    
+                    // Check if click is within this item's bounds
+                    if (x >= itemX && x <= itemX + itemSize && 
+                        y >= itemY && y <= itemY + itemSize) {
+                        // Toggle selection
+                        this.selectedItem = this.selectedItem === name ? null : name;
+                        console.log('Selected item:', this.selectedItem);
+                        return;
+                    }
+                    
+                    itemIndex++;
+                }
+                
+                // If click wasn't on any item, deselect
+                this.selectedItem = null;
+            }
+        }
+
+        // Food class
+        class Food {
+            constructor(x, y, type, nutrientValue, energyValue) {
+                this.x = x;
+                this.y = y;
+                this.type = type; // e.g., 'berries', 'fish', 'kibble', 'steak', etc.
+                this.radius = 8; // Size of the food item
+                this.nutrientValue = nutrientValue; // How much hunger it restores
+                this.energyValue = energyValue; // How much energy it provides
+                this.color = this.getFoodColor(type);
+                this.collected = false;
+                this.inventoryItem = this.getInventoryItem(); // What item this adds to inventory
+            }
+            
+            getFoodColor(type) {
+                // Different colors for different food types
+                switch(type) {
+                    case 'berries': return '#CC0066'; // Dark red/magenta for berries
+                    case 'nuts': return '#8B4513'; // Brown for nuts
+                    case 'cactus': return '#7FFF00'; // Chartreuse for cactus
+                    case 'fish': return '#4682B4'; // Steel blue for fish
+                    case 'minerals': return '#B8B8B8'; // Light grey for minerals
+                    case 'kibble': return '#FFA500'; // Orange for kibble
+                    case 'steak': return '#8B0000'; // Dark red for steak
+                    case 'cake': return '#FFFF00'; // Yellow for cake
+                    case 'vegetables': return '#228B22'; // Forest green for vegetables
+                    default: return '#FFFF00'; // Yellow default
+                }
+            }
+            
+            getInventoryItem() {
+                const type = this.type;
+                console.log('Creating inventory item for food type:', type);
+                
+                // Define drawing functions outside of the switch to ensure proper binding
+                const drawBerries = (ctx, x, y, size) => {
+                    console.log('Drawing berries');
+                    // Draw berry cluster
+                    ctx.fillStyle = '#CC0066';
+                    ctx.beginPath();
+                    ctx.arc(x + size * 0.3, y + size * 0.3, size * 0.2, 0, Math.PI * 2);
+                    ctx.arc(x + size * 0.7, y + size * 0.4, size * 0.2, 0, Math.PI * 2);
+                    ctx.arc(x + size * 0.5, y + size * 0.7, size * 0.2, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Add leaves
+                    ctx.fillStyle = '#228B22';
+                    ctx.beginPath();
+                    ctx.ellipse(x + size * 0.2, y + size * 0.2, size * 0.15, size * 0.1, Math.PI/4, 0, Math.PI * 2);
+                    ctx.ellipse(x + size * 0.8, y + size * 0.3, size * 0.15, size * 0.1, -Math.PI/4, 0, Math.PI * 2);
+                    ctx.fill();
+                };
+
+                const drawNuts = (ctx, x, y, size) => {
+                    ctx.fillStyle = '#8B4513';
+                    ctx.beginPath();
+                    ctx.ellipse(x + size/2, y + size/2, size * 0.3, size * 0.4, Math.PI/4, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Add texture lines
+                    ctx.strokeStyle = '#5C2C0C';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(x + size * 0.3, y + size * 0.3);
+                    ctx.lineTo(x + size * 0.7, y + size * 0.7);
+                    ctx.moveTo(x + size * 0.3, y + size * 0.7);
+                    ctx.lineTo(x + size * 0.7, y + size * 0.3);
+                    ctx.stroke();
+                };
+
+                const drawCactus = (ctx, x, y, size) => {
+                    ctx.fillStyle = '#7FFF00';
+                    ctx.beginPath();
+                    ctx.roundRect(x + size * 0.3, y + size * 0.2, size * 0.4, size * 0.6, 5);
+                    ctx.fill();
+                    // Add spikes
+                    ctx.strokeStyle = '#666666';
+                    ctx.lineWidth = 2;
+                    for(let i = 0; i < 4; i++) {
+                        ctx.beginPath();
+                        ctx.moveTo(x + size * 0.3, y + size * (0.3 + i * 0.15));
+                        ctx.lineTo(x + size * 0.15, y + size * (0.3 + i * 0.15));
+                        ctx.moveTo(x + size * 0.7, y + size * (0.3 + i * 0.15));
+                        ctx.lineTo(x + size * 0.85, y + size * (0.3 + i * 0.15));
+                        ctx.stroke();
+                    }
+                };
+
+                const drawFish = (ctx, x, y, size) => {
+                    ctx.fillStyle = '#4682B4';
+                    // Fish body
+                    ctx.beginPath();
+                    ctx.ellipse(x + size * 0.4, y + size/2, size * 0.3, size * 0.2, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Tail
+                    ctx.beginPath();
+                    ctx.moveTo(x + size * 0.7, y + size * 0.3);
+                    ctx.lineTo(x + size * 0.9, y + size/2);
+                    ctx.lineTo(x + size * 0.7, y + size * 0.7);
+                    ctx.closePath();
+                    ctx.fill();
+                    // Eye
+                    ctx.fillStyle = '#000';
+                    ctx.beginPath();
+                    ctx.arc(x + size * 0.3, y + size * 0.45, size * 0.05, 0, Math.PI * 2);
+                    ctx.fill();
+                };
+
+                const drawMinerals = (ctx, x, y, size) => {
+                    ctx.fillStyle = '#B8B8B8';
+                    // Crystal shape
+                    ctx.beginPath();
+                    ctx.moveTo(x + size/2, y + size * 0.2);
+                    ctx.lineTo(x + size * 0.7, y + size * 0.4);
+                    ctx.lineTo(x + size * 0.7, y + size * 0.6);
+                    ctx.lineTo(x + size/2, y + size * 0.8);
+                    ctx.lineTo(x + size * 0.3, y + size * 0.6);
+                    ctx.lineTo(x + size * 0.3, y + size * 0.4);
+                    ctx.closePath();
+                    ctx.fill();
+                    // Highlight
+                    ctx.strokeStyle = '#FFFFFF';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(x + size * 0.4, y + size * 0.3);
+                    ctx.lineTo(x + size * 0.6, y + size * 0.3);
+                    ctx.stroke();
+                };
+
+                const item = (() => {
+                    switch(type) {
+                        case 'berries':
+                            return new InventoryItem('resource', 'Berries', 'Sweet and nutritious', 'common', drawBerries);
+                        case 'nuts':
+                            return new InventoryItem('resource', 'Nuts', 'Crunchy and filling', 'common', drawNuts);
+                        case 'cactus':
+                            return new InventoryItem('resource', 'Cactus', 'Spiky but hydrating', 'common', drawCactus);
+                        case 'fish':
+                            return new InventoryItem('resource', 'Fish', 'Fresh and healthy', 'uncommon', drawFish);
+                        case 'minerals':
+                            return new InventoryItem('resource', 'Minerals', 'Essential nutrients', 'common', drawMinerals);
+                        default:
+                            return null;
+                    }
+                })();
+                
+                if (item) {
+                    console.log('Created food inventory item:', item.name, 'Has custom drawIcon?', !!item.drawIcon);
+                }
+                return item;
+            }
+            
+            draw(ctx, cameraX, cameraY) {
+                // Calculate screen position
+                const screenX = this.x - cameraX;
+                const screenY = this.y - cameraY;
+                
+                // Only draw if on screen
+                const buffer = this.radius * 2;
+                if (screenX + buffer < 0 || screenX - buffer > ctx.canvas.width || 
+                    screenY + buffer < 0 || screenY - buffer > ctx.canvas.height) {
+                    return;
+                }
+                
+                // Draw food item
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                
+                // Add a little shine/highlight
+                ctx.beginPath();
+                ctx.arc(screenX - this.radius/3, screenY - this.radius/3, this.radius/3, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                ctx.fill();
+            }
+            
+            // Check if the blob is collecting/eating this food
+            isColliding(blob) {
+                const dx = this.x - blob.x;
+                const dy = this.y - blob.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                return distance < this.radius + blob.radius;
+            }
+        }
+
+        // FoodManager class
+        class FoodManager {
+            constructor(worldWidth, worldHeight) {
+                this.worldWidth = worldWidth;
+                this.worldHeight = worldHeight;
+                this.foods = [];
+                this.maxFoods = 50; // Maximum number of food items at once
+                this.spawnTimer = 0;
+                this.spawnInterval = 1000; // Time in ms between spawn attempts
+                this.lastSpawnTime = Date.now();
+            }
+            
+            update(biomeManager) {
+                const now = Date.now();
+                const deltaTime = now - this.lastSpawnTime;
+                this.lastSpawnTime = now;
+                
+                // Increment spawn timer
+                this.spawnTimer += deltaTime;
+                
+                // Attempt to spawn new food if timer exceeds interval
+                if (this.spawnTimer >= this.spawnInterval) {
+                    this.spawnTimer = 0;
+                    this.trySpawnFood(biomeManager);
+                }
+            }
+            
+            trySpawnFood(biomeManager) {
+                // Don't spawn if we're at the max
+                if (this.foods.length >= this.maxFoods) return;
+                
+                // Random position in the world
+                const x = Math.random() * this.worldWidth;
+                const y = Math.random() * this.worldHeight;
+                
+                // Get the biome at this position
+                const biome = biomeManager.getBiomeAt(x, y);
+                
+                // Only spawn if the biome has resources
+                if (biome && biome.resources.length > 0) {
+                    // Pick a random resource from this biome
+                    const resourceType = biome.resources[Math.floor(Math.random() * biome.resources.length)];
+                    
+                    // Different food types have different values
+                    let nutrientValue, energyValue;
+                    
+                    switch(resourceType) {
+                        case 'berries':
+                            nutrientValue = 15;
+                            energyValue = 10;
+                            break;
+                        case 'nuts':
+                            nutrientValue = 20;
+                            energyValue = 15;
+                            break;
+                        case 'cactus':
+                            nutrientValue = 10;
+                            energyValue = 5;
+                            break;
+                        case 'fish':
+                            nutrientValue = 25;
+                            energyValue = 20;
+                            break;
+                        case 'minerals':
+                            nutrientValue = 5;
+                            energyValue = 30;
+                            break;
+                        default:
+                            nutrientValue = 10;
+                            energyValue = 10;
+                    }
+                    
+                    // Create and add the food
+                    const food = new Food(x, y, resourceType, nutrientValue, energyValue);
+                    this.foods.push(food);
+                }
+            }
+            
+            draw(ctx, cameraX, cameraY) {
+                // Draw all food items
+                this.foods.forEach(food => {
+                    if (!food.collected) {
+                        food.draw(ctx, cameraX, cameraY);
+                    }
+                });
+            }
+            
+            checkCollisions(blob) {
+                // Skip if blob is dead
+                if (blob.isDead) return;
+                
+                let foodEaten = false;
+                
+                for (let i = 0; i < this.foods.length; i++) {
+                    const food = this.foods[i];
+                    
+                    // Skip if already collected
+                    if (food.collected) continue;
+                    
+                    // Check if blob is eating this food (either by touch or collection mode)
+                    const isColliding = food.isColliding(blob);
+                    const isInCollectionRange = blob.collectionMode && this.isInCollectionRange(food, blob);
+                    
+                    if (isColliding || isInCollectionRange) {
+                        foodEaten = true;
+                        
+                        // Apply the food effects to the blob
+                        blob.stats.feed(food.nutrientValue, food.type);
+                        blob.stats.rest(food.energyValue);
+                        
+                        // Some foods also heal the blob
+                        if (food.type === 'fish' || food.type === 'berries') {
+                            blob.stats.heal(5); // Fish and berries are healing
+                        }
+                        
+                        // Add to inventory if applicable
+                        let inventoryMessage = "";
+                        if (food.inventoryItem) {
+                            // Create a new instance of the inventory item
+                            const newItem = new InventoryItem(
+                                food.inventoryItem.type,
+                                food.inventoryItem.name,
+                                food.inventoryItem.description,
+                                food.inventoryItem.rarity,
+                                food.inventoryItem.drawIcon  // Pass the drawing function
+                            );
+                            newItem.quantity = 1; // Ensure quantity is set to 1
+                            
+                            if (blob.inventory.addItem(newItem)) {
+                                inventoryMessage = `, +1 ${newItem.name}`;
+                            } else {
+                                inventoryMessage = " (Inventory full!)";
+                            }
+                        }
+                        
+                        // Mark as collected
+                        food.collected = true;
+                        
+                        // Show a small popup message with all effects
+                        let message = `+${food.nutrientValue} hunger, +${food.energyValue} energy${inventoryMessage}`;
+                        if (food.type === 'fish' || food.type === 'berries') {
+                            message += ', +5 health';
+                        }
+                        blob.showMessage(message);
+                        
+                        // Check if we should evolve based on single food item
+                        // Always evolve - no max level limit
+                        if (blob.stats.checkFoodEvolution()) {
+                            blob.showMessage("Instant Evolution: Food eaten!", 3000);
+                            const evolutionDetails = blob.stats.getEvolutionDetails();
+                            blob.evolve(evolutionDetails);
+                        }
+                        // Also check regular evolution (based on experience thresholds)
+                        else if (blob.checkEvolution()) {
+                            const evolutionDetails = blob.stats.getEvolutionDetails();
+                            blob.evolve(evolutionDetails);
+                        }
+                    }
+                }
+                
+                // Remove collected foods
+                this.foods = this.foods.filter(food => !food.collected);
+            }
+            
+            // Check if food is in the blob's collection range
+            isInCollectionRange(food, blob) {
+                const dx = food.x - blob.x;
+                const dy = food.y - blob.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                return distance < blob.collectionRadius;
+            }
+        }
+
+        // Biome Manager
+        class BiomeManager {
+            constructor(width, height, tileSize) {
+                this.width = width;
+                this.height = height;
+                this.tileSize = tileSize;
+                this.grid = [];
+                this.biomeTypes = {
+                    FOREST: new Biome('Forest', '#228B22', 0, ['berries', 'nuts']),
+                    DESERT: new Biome('Desert', '#F4A460', 2, ['cactus']),
+                    WATER: new Biome('Water', '#1E90FF', -1, ['fish']),
+                    MOUNTAINS: new Biome('Mountains', '#808080', -2, ['minerals'])
+                };
+                
+                // Make the world much larger than the screen
+                this.worldWidth = width * 5; // 5 times the canvas width
+                this.worldHeight = height * 5; // 5 times the canvas height
+                
+                this.generateBiomes();
+            }
+            
+            generateBiomes() {
+                // Calculate grid dimensions for the larger world
+                const gridWidth = Math.ceil(this.worldWidth / this.tileSize);
+                const gridHeight = Math.ceil(this.worldHeight / this.tileSize);
+                
+                // Initialize grid with empty cells
+                for (let y = 0; y < gridHeight; y++) {
+                    const row = [];
+                    for (let x = 0; x < gridWidth; x++) {
+                        // Random biome assignment
+                        const biomeKeys = Object.keys(this.biomeTypes);
+                        const randomBiome = this.biomeTypes[biomeKeys[Math.floor(Math.random() * biomeKeys.length)]];
+                        row.push(randomBiome);
+                    }
+                    this.grid.push(row);
+                }
+                
+                // Smooth out biomes to create more natural-looking regions
+                this.smoothBiomes(3);
+            }
+            
+            smoothBiomes(iterations) {
+                for (let i = 0; i < iterations; i++) {
+                    const newGrid = JSON.parse(JSON.stringify(this.grid));
+                    
+                    for (let y = 0; y < this.grid.length; y++) {
+                        for (let x = 0; x < this.grid[y].length; x++) {
+                            const neighbors = this.getNeighbors(x, y);
+                            if (neighbors.length > 0) {
+                                // Find most common neighbor biome
+                                const biomeCount = {};
+                                let maxCount = 0;
+                                let dominantBiome = this.grid[y][x];
+                                
+                                neighbors.forEach(neighbor => {
+                                    const biomeType = neighbor.type;
+                                    biomeCount[biomeType] = (biomeCount[biomeType] || 0) + 1;
+                                    
+                                    if (biomeCount[biomeType] > maxCount) {
+                                        maxCount = biomeCount[biomeType];
+                                        dominantBiome = neighbor;
+                                    }
+                                });
+                                
+                                // 50% chance to change to the dominant biome of neighbors
+                                if (Math.random() < 0.5) {
+                                    newGrid[y][x] = dominantBiome;
+                                }
+                            }
+                        }
+                    }
+                    
+                    this.grid = newGrid;
+                }
+            }
+            
+            getNeighbors(x, y) {
+                const neighbors = [];
+                const directions = [
+                    [-1, -1], [0, -1], [1, -1],
+                    [-1, 0],           [1, 0],
+                    [-1, 1],  [0, 1],  [1, 1]
+                ];
+                
+                directions.forEach(([dx, dy]) => {
+                    const nx = x + dx;
+                    const ny = y + dy;
+                    
+                    if (nx >= 0 && nx < this.grid[0].length && ny >= 0 && ny < this.grid.length) {
+                        neighbors.push(this.grid[ny][nx]);
+                    }
+                });
+                
+                return neighbors;
+            }
+            
+            getBiomeAt(worldX, worldY) {
+                const gridX = Math.floor(worldX / this.tileSize);
+                const gridY = Math.floor(worldY / this.tileSize);
+                
+                // Check boundaries
+                if (gridX >= 0 && gridX < this.grid[0].length && gridY >= 0 && gridY < this.grid.length) {
+                    return this.grid[gridY][gridX];
+                }
+                
+                // Default to forest if out of bounds
+                return this.biomeTypes.FOREST;
+            }
+            
+            draw(ctx, cameraX, cameraY, viewportWidth, viewportHeight) {
+                // Calculate the visible grid cells based on camera position
+                const startX = Math.floor(cameraX / this.tileSize);
+                const startY = Math.floor(cameraY / this.tileSize);
+                const endX = Math.ceil((cameraX + viewportWidth) / this.tileSize);
+                const endY = Math.ceil((cameraY + viewportHeight) / this.tileSize);
+                
+                // Draw only visible biomes
+                for (let y = startY; y < endY; y++) {
+                    for (let x = startX; x < endX; x++) {
+                        // Check if this grid position is within bounds
+                        if (y >= 0 && y < this.grid.length && x >= 0 && x < this.grid[0].length) {
+                            const biome = this.grid[y][x];
+                            ctx.fillStyle = biome.color;
+                            ctx.fillRect(
+                                x * this.tileSize - cameraX, 
+                                y * this.tileSize - cameraY, 
+                                this.tileSize, 
+                                this.tileSize
+                            );
+                        }
+                    }
+                }
+                
+                // Add grid lines for better visibility
+                ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+                ctx.lineWidth = 1;
+                
+                // Only draw grid lines for the visible area
+                // Vertical lines
+                for (let x = startX; x <= endX; x++) {
+                    ctx.beginPath();
+                    ctx.moveTo(x * this.tileSize - cameraX, startY * this.tileSize - cameraY);
+                    ctx.lineTo(x * this.tileSize - cameraX, endY * this.tileSize - cameraY);
+                    ctx.stroke();
+                }
+                
+                // Horizontal lines
+                for (let y = startY; y <= endY; y++) {
+                    ctx.beginPath();
+                    ctx.moveTo(startX * this.tileSize - cameraX, y * this.tileSize - cameraY);
+                    ctx.lineTo(endX * this.tileSize - cameraX, y * this.tileSize - cameraY);
+                    ctx.stroke();
+                }
+            }
+            
+            getWorldSize() {
+                return {
+                    width: this.worldWidth,
+                    height: this.worldHeight
+                };
+            }
+        }
+
+        // Stats class
+        class Stats {
+            constructor() {
+                // Initialize stats with default values (0-100 scale)
+                this.hunger = 100;      // 100 = full, 0 = starving
+                this.energy = 100;      // 100 = energetic, 0 = exhausted
+                this.temperature = 20;  // In Celsius: 20°C = neutral (changed from percentage scale)
+                this.mood = 75;         // 0 = sad, 100 = happy
+                this.health = 100;      // 100 = perfect health, 0 = dead
+                
+                // Evolution stats
+                this.experience = 0;    // Experience points earned
+                this.evolutionLevel = 0; // Current evolution level
+                // Generate an unlimited number of evolve thresholds
+                this.experienceThresholds = [];
+                for (let i = 0; i < 100; i++) {
+                    // Start with small thresholds, but they grow exponentially
+                    this.experienceThresholds.push(Math.round(100 * Math.pow(1.5, i)));
+                }
+                this.foodCounter = 0;   // Counter for food items eaten
+                
+                // Biome exposure tracking
+                this.biomeExposure = {
+                    Forest: 0,
+                    Desert: 0, 
+                    Water: 0,
+                    Mountains: 0
+                };
+                
+                // Food consumption tracking
+                this.foodConsumed = {
+                    berries: 0,
+                    nuts: 0,
+                    cactus: 0,
+                    fish: 0,
+                    minerals: 0
+                };
+                
+                // Decay rates (amount lost per second)
+                this.hungerDecayRate = 0.5;
+                this.energyDecayRate = 0.1;  // Reduced base decay rate for energy
+                this.healthDecayRate = 0.05; // Health slowly decays when other stats are low
+                
+                // Last update time for calculating delta time
+                this.lastUpdate = Date.now();
+                
+                // Current biome the blob is in
+                this.currentBiome = null;
+                
+                // Activity tracking
+                this.isMoving = false;
+            }
+            
+            update(currentBiome, isMoving) {
+                const now = Date.now();
+                const deltaTime = (now - this.lastUpdate) / 1000; // Convert to seconds
+                this.lastUpdate = now;
+                
+                // Update current biome and movement state
+                this.currentBiome = currentBiome;
+                this.isMoving = isMoving;
+                
+                // Update hunger (always decreases over time)
+                this.hunger = Math.max(0, this.hunger - this.hungerDecayRate * deltaTime);
+                
+                // Energy regeneration/decay mechanics
+                if (isMoving) {
+                    // Energy decreases faster when moving
+                    let movementEnergyCost = 0.3;
+                    
+                    // Biome-specific energy costs can be adjusted by blob traits in the Blob class
+                    
+                    this.energy = Math.max(0, this.energy - movementEnergyCost * deltaTime);
+                } else {
+                    // Energy regenerates when not moving, but only if hunger is above 40%
+                    if (this.hunger > 40) {
+                        this.energy = Math.min(100, this.energy + 0.2 * deltaTime * (this.hunger / 100));
+                    } else {
+                        // Energy still decays when hunger is low, even when not moving
+                        this.energy = Math.max(0, this.energy - this.energyDecayRate * deltaTime);
+                    }
+                }
+                
+                // Apply biome effects on temperature (in Celsius)
+                if (currentBiome) {
+                    // Convert biome temperature effect to Celsius scale
+                    // Desert: +2°C, Water: -1°C, Mountains: -2°C
+                    this.temperature += currentBiome.temperatureEffect * deltaTime * 0.1;
+                    // Keep temperature in reasonable range (-10°C to 45°C)
+                    this.temperature = Math.max(-10, Math.min(45, this.temperature));
+                    
+                    // Track biome exposure time
+                    this.biomeExposure[currentBiome.type] += deltaTime;
+                    
+                    // Gain experience in current biome
+                    this.gainExperience(0.05 * deltaTime);
+                }
+                
+                // If hunger is low, energy decreases faster and health begins to drop
+                if (this.hunger < 30) {
+                    this.energy = Math.max(0, this.energy - 0.3 * deltaTime);
+                    
+                    // Health decreases when hunger is critically low (starvation)
+                    if (this.hunger < 15) {
+                        this.health = Math.max(0, this.health - 0.2 * deltaTime);
+                    }
+                }
+                
+                // If energy is completely depleted, health decreases (exhaustion)
+                if (this.energy <= 0) {
+                    this.health = Math.max(0, this.health - 0.15 * deltaTime);
+                }
+                
+                // If temperature is extreme, energy decreases faster and health can drop
+                if (this.temperature < 5 || this.temperature > 35) {
+                    this.energy = Math.max(0, this.energy - 0.3 * deltaTime);
+                    
+                    // Severe temperature causes health damage
+                    if (this.temperature < 0 || this.temperature > 40) {
+                        this.health = Math.max(0, this.health - 0.1 * deltaTime);
+                    }
+                }
+                
+                // Natural health regeneration when conditions are good
+                if (this.hunger > 70 && this.energy > 70 && this.temperature >= 10 && this.temperature <= 30) {
+                    this.health = Math.min(100, this.health + 0.05 * deltaTime);
+                }
+                
+                // Update mood based on other stats
+                this.updateMood();
+                
+                // Check for evolution
+                this.checkEvolution();
+                
+                // Return health status for game state checking
+                return this.health;
+            }
+            
+            updateMood() {
+                // Mood is affected by all stats
+                // Formula: weighted average of hunger, energy, temperature comfort, and health
+                const tempComfort = 1 - Math.abs(this.temperature - 20) / 30; // 1 at 20°C, 0 at extremes
+                
+                this.mood = (
+                    0.3 * (this.hunger / 100) + 
+                    0.2 * (this.energy / 100) + 
+                    0.2 * tempComfort +
+                    0.3 * (this.health / 100)
+                ) * 100; // Convert to 0-100 scale
+            }
+            
+            // Methods to modify stats
+            feed(amount, foodType) {
+                this.hunger = Math.min(100, this.hunger + amount);
+                
+                // Increment food counter for evolution check
+                this.foodCounter++;
+                
+                // Track food consumption
+                if (foodType && this.foodConsumed.hasOwnProperty(foodType)) {
+                    this.foodConsumed[foodType]++;
+                    
+                    // Gain significantly more experience when eating food (5x more)
+                    this.gainExperience(amount * 1.0); // Increased from 0.2 to 1.0
+                }
+            }
+            
+            rest(amount) {
+                this.energy = Math.min(100, this.energy + amount);
+            }
+            
+            heal(amount) {
+                this.health = Math.min(100, this.health + amount);
+            }
+            
+            changeTemperature(amount) {
+                this.temperature = Math.max(-10, Math.min(45, this.temperature + amount));
+            }
+            
+            gainExperience(amount) {
+                this.experience += amount;
+            }
+            
+            checkEvolution() {
+                // Check if we've reached the next evolution threshold
+                const nextThreshold = this.experienceThresholds[this.evolutionLevel];
+                if (nextThreshold && this.experience >= nextThreshold) {
+                    this.evolutionLevel++;
+                    return true;
+                }
+                return false;
+            }
+            
+            // Get the dominant biome based on exposure time
+            getDominantBiome() {
+                let maxExposure = 0;
+                let dominantBiome = null;
+                
+                for (const [biome, exposure] of Object.entries(this.biomeExposure)) {
+                    if (exposure > maxExposure) {
+                        maxExposure = exposure;
+                        dominantBiome = biome;
+                    }
+                }
+                
+                return dominantBiome;
+            }
+            
+            // Get the favorite food based on consumption
+            getFavoriteFood() {
+                let maxConsumed = 0;
+                let favoriteFood = null;
+                
+                for (const [food, count] of Object.entries(this.foodConsumed)) {
+                    if (count > maxConsumed) {
+                        maxConsumed = count;
+                        favoriteFood = food;
+                    }
+                }
+                
+                return favoriteFood;
+            }
+            
+            // Get evolution details
+            getEvolutionDetails() {
+                const dominantBiome = this.getDominantBiome();
+                const favoriteFood = this.getFavoriteFood();
+                
+                return {
+                    level: this.evolutionLevel,
+                    dominantBiome,
+                    favoriteFood,
+                    experienceProgress: this.getExperienceProgress()
+                };
+            }
+            
+            // Get experience progress as a percentage to next level
+            getExperienceProgress() {
+                const currentThreshold = this.evolutionLevel > 0 
+                    ? this.experienceThresholds[this.evolutionLevel - 1] 
+                    : 0;
+                const nextThreshold = this.experienceThresholds[this.evolutionLevel] || Infinity;
+                const levelExperience = nextThreshold - currentThreshold;
+                const currentLevelExperience = this.experience - currentThreshold;
+                
+                return Math.min(100, (currentLevelExperience / levelExperience) * 100);
+            }
+
+            // Update the checkFoodEvolution method for unlimited evolution
+            checkFoodEvolution() {
+                // Evolve immediately after eating any food item
+                if (this.foodCounter > 0) {
+                    this.foodCounter = 0; // Reset counter
+                    
+                    // Calculate how much XP is needed to reach next level
+                    const currentThreshold = this.evolutionLevel > 0 
+                        ? this.experienceThresholds[this.evolutionLevel - 1] 
+                        : 0;
+                    const nextThreshold = this.experienceThresholds[this.evolutionLevel];
+                    const neededXP = nextThreshold - this.experience;
+                    
+                    // Add the needed XP plus a little extra
+                    this.experience += neededXP + 10;
+                    
+                    return true;
+                }
+                return false;
+            }
+        }
+
+        // Blob class
+        class Blob {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = 20;
+                this.color = '#808080'; // Grey color
+                this.speed = 0.8; // Slightly faster base speed, but still much slower than player (speed 4)
+                this.keys = {
+                    ArrowUp: false,
+                    ArrowDown: false,
+                    ArrowLeft: false,
+                    ArrowRight: false
+                };
+
+                // Add stats to the blob
+                this.stats = new Stats();
+                
+                // Current biome the blob is in
+                this.currentBiome = null;
+                
+                // Message system for showing popups
+                this.messages = [];
+                
+                // Evolution traits
+                this.traits = {
+                    spikes: false,        // Desert adaptation
+                    fins: false,          // Water adaptation
+                    furCoat: false,       // Mountain adaptation
+                    camouflage: false,    // Forest adaptation
+                    size: 1.0,            // Size multiplier
+                    glowingSpots: false   // Aesthetic feature for higher levels
+                };
+                
+                // Visual effects
+                this.evolutionFlash = false;
+                
+                // Add an inventory
+                this.inventory = new Inventory();
+                
+                // Add collection mode
+                this.collectionMode = false;
+                this.collectionRadius = 50; // Collection range when in collection mode
+                
+                // Building mode properties
+                this.isBuildMode = false;
+                this.selectedBuildingType = 'house';
+                this.buildingTypes = ['house', 'farm', 'tower', 'workshop'];
+                this.buildingTypeIndex = 0;
+                
+                // Add pet properties
+                this.isPet = false; // Flag to indicate if the blob is a tamed pet
+                this.owner = null; // Reference to the person who owns the blob
+                this.petName = "Blobby"; // Default pet name
+                this.tamingProgress = 0; // Progress toward taming (0-100)
+                this.petEvolutions = [
+                    "Wild Blob", // Level 0
+                    "Tamed Blob", // Level 1
+                    "Friendly Blob", // Level 2
+                    "Loyal Blob", // Level 3
+                    "Companion Blob", // Level 4
+                    "Guardian Blob" // Level 5+
+                ];
+                
+                this.setupControls();
+                
+                // Setup mouse click handler for inventory
+                window.addEventListener('click', (e) => {
+                    const rect = document.getElementById('gameCanvas').getBoundingClientRect();
+                    const canvasX = e.clientX - rect.left;
+                    const canvasY = e.clientY - rect.top;
+                    
+                    // Handle inventory click
+                    if (this.inventory.visible) {
+                        this.inventory.handleClick(canvasX, canvasY, this.canvas.width, this.canvas.height);
+                        // Update active food based on selected item
+                        const selectedItem = this.inventory.items[this.inventory.selectedItem];
+                        console.log('Selected item for feeding:', selectedItem);
+                        
+                        if (selectedItem && selectedItem.type === 'resource') {
+                            this.activeFood = {
+                                type: selectedItem.name,
+                                nutrientValue: 10,
+                                energyValue: 5
+                            };
+                            
+                            // Update food circle color based on food type
+                            switch(selectedItem.name.toLowerCase()) {
+                                case 'berries': this.foodCircle.color = '#CC0066'; break;
+                                case 'nuts': this.foodCircle.color = '#8B4513'; break;
+                                case 'cactus': this.foodCircle.color = '#7FFF00'; break;
+                                case 'fish': this.foodCircle.color = '#4682B4'; break;
+                                case 'minerals': this.foodCircle.color = '#B8B8B8'; break;
+                                default: this.foodCircle.color = '#FFFFFF';
+                            }
+                            console.log('Updated active food:', this.activeFood);
+                            this.showMessage(`Selected ${selectedItem.name} for feeding`);
+                        } else {
+                            this.activeFood = null;
+                            console.log('No valid food item selected');
+                        }
+                    }
+                });
+            }
+            
+            showMessage(text) {
+                // Add a new message with a timeout
+                this.messages.push({
+                    text: text,
+                    x: this.x,
+                    y: this.y - this.radius - 20, // Position above the blob
+                    alpha: 1.0, // Full opacity
+                    duration: 1500 // Duration in milliseconds
+                });
+            }
+
+            setupControls() {
+                window.addEventListener('keydown', (e) => {
+                    if (this.keys.hasOwnProperty(e.key)) {
+                        this.keys[e.key] = true;
+                    }
+                    
+                    // Toggle collection mode with G key
+                    if (e.code === 'KeyG') {
+                        this.collectionMode = !this.collectionMode;
+                        this.showMessage(this.collectionMode ? "Collection mode ON" : "Collection mode OFF");
+                    }
+                    
+                    // Toggle build mode with B key
+                    if (e.code === 'KeyB') {
+                        this.isBuildMode = !this.isBuildMode;
+                        // Turn off collection mode when entering build mode
+                        if (this.isBuildMode) this.collectionMode = false;
+                        this.showMessage(this.isBuildMode ? "Build mode ON" : "Build mode OFF", 2000);
+                    }
+                    
+                    // Cycle through building types with N key
+                    if (e.code === 'KeyN' && this.isBuildMode) {
+                        this.buildingTypeIndex = (this.buildingTypeIndex + 1) % this.buildingTypes.length;
+                        this.selectedBuildingType = this.buildingTypes[this.buildingTypeIndex];
+                        this.showMessage(`Selected: ${this.selectedBuildingType}`, 2000);
+                    }
+                    
+                    // Name pet only happens when not in build mode
+                    if (e.code === 'KeyN' && !this.isBuildMode && this.isPet) {
+                        // This is handled in the Game class
+                    }
+                });
+
+                window.addEventListener('keyup', (e) => {
+                    if (this.keys.hasOwnProperty(e.key)) {
+                        this.keys[e.key] = false;
+                    }
+                });
+            }
+
+            update(worldWidth, worldHeight, biomeManager) {
+                // Get current biome
+                this.currentBiome = biomeManager.getBiomeAt(this.x, this.y);
+                
+                // Determine if the blob is moving this frame
+                const isMoving = this.keys.ArrowUp || this.keys.ArrowDown || 
+                                this.keys.ArrowLeft || this.keys.ArrowRight;
+                
+                // Update stats with current biome and movement state
+                const healthStatus = this.stats.update(this.currentBiome, isMoving);
+                
+                // Check if blob is dead (health reaches 0)
+                if (healthStatus <= 0) {
+                    this.handleDeath();
+                    return;
+                }
+                
+                // Slow down when energy is low
+                let energyFactor = Math.max(0.5, this.stats.energy / 100);
+                
+                // Biome-specific factors
+                let biomeFactor = 1;
+                if (this.currentBiome) {
+                    // Water movement
+                    if (this.currentBiome.type === 'Water') {
+                        biomeFactor = this.traits.fins ? 1.2 : 0.6; // Faster with fins, slower without
+                    }
+                    // Desert movement
+                    else if (this.currentBiome.type === 'Desert') {
+                        biomeFactor = this.traits.spikes ? 1.1 : 0.8; // Faster with spikes
+                    }
+                    // Mountain movement - affected by temperature
+                    else if (this.currentBiome.type === 'Mountains') {
+                        if (this.stats.temperature < 5) {
+                            biomeFactor = this.traits.furCoat ? 0.9 : 0.7; // Less slowdown with fur
+                        }
+                    }
+                }
+                
+                // Health affects movement too - when health is low, movement gets harder
+                const healthFactor = this.stats.health > 30 ? 1 : this.stats.health / 30;
+                
+                const currentSpeed = this.speed * energyFactor * biomeFactor * healthFactor;
+                
+                // Movement
+                if (this.keys.ArrowUp) this.y -= currentSpeed;
+                if (this.keys.ArrowDown) this.y += currentSpeed;
+                if (this.keys.ArrowLeft) this.x -= currentSpeed;
+                if (this.keys.ArrowRight) this.x += currentSpeed;
+
+                // World wrap-around (sphere-like)
+                if (this.x < 0) this.x = worldWidth;
+                if (this.x > worldWidth) this.x = 0;
+                if (this.y < 0) this.y = worldHeight;
+                if (this.y > worldHeight) this.y = 0;
+                
+                // Gradually adapt blob color to biome
+                if (this.currentBiome) {
+                    this.adaptToBiome();
+                }
+                
+                // Update messages
+                this.updateMessages();
+            }
+            
+            handleDeath() {
+                // Set dead state
+                this.isDead = true;
+                
+                // Darken blob color
+                this.color = '#404040'; // Dark grey
+                
+                // Remove any existing death screen overlay
+                const existingOverlay = document.getElementById('deathOverlay');
+                if (existingOverlay) {
+                    document.body.removeChild(existingOverlay);
+                }
+                
+                // Create death screen overlay
+                const overlay = document.createElement('div');
+                overlay.id = 'deathOverlay';
+                overlay.style.position = 'absolute';
+                overlay.style.top = '50%';
+                overlay.style.left = '50%';
+                overlay.style.transform = 'translate(-50%, -50%)';
+                overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+                overlay.style.padding = '20px';
+                overlay.style.borderRadius = '10px';
+                overlay.style.textAlign = 'center';
+                overlay.style.zIndex = '1000';
+                
+                // Add death message
+                const message = document.createElement('div');
+                message.textContent = 'Your blob has died...';
+                message.style.color = 'white';
+                message.style.fontSize = '24px';
+                message.style.marginBottom = '20px';
+                overlay.appendChild(message);
+                
+                // Add restart button
+                const button = document.createElement('button');
+                button.textContent = 'Restart Game';
+                button.style.padding = '10px 20px';
+                button.style.fontSize = '18px';
+                button.style.backgroundColor = '#4CAF50';
+                button.style.color = 'white';
+                button.style.border = 'none';
+                button.style.borderRadius = '5px';
+                button.style.cursor = 'pointer';
+                button.onmouseover = () => button.style.backgroundColor = '#45a049';
+                button.onmouseout = () => button.style.backgroundColor = '#4CAF50';
+                
+                button.onclick = () => {
+                    // Remove overlay
+                    if (overlay.parentNode) {
+                        document.body.removeChild(overlay);
+                    }
+                    // Reset blob
+                    this.resetBlob();
+                };
+                
+                overlay.appendChild(button);
+                document.body.appendChild(overlay);
+            }
+            
+            resetBlob() {
+                // Reset stats
+                this.stats = new Stats();
+                
+                // Reset position (keep current position)
+                
+                // Reset appearance
+                this.radius = 20;
+                this.color = '#808080'; // Grey color
+                
+                // Reset evolution traits
+                this.traits = {
+                    spikes: false,
+                    fins: false,
+                    furCoat: false,
+                    camouflage: false,
+                    size: 1.0,
+                    glowingSpots: false
+                };
+                
+                // Reset dead state
+                this.isDead = false;
+                
+                // Show revival message
+                this.showMessage("Blob reborn!", 3000);
+            }
+            
+            updateMessages() {
+                const now = Date.now();
+                
+                // Update each message
+                for (let i = this.messages.length - 1; i >= 0; i--) {
+                    const message = this.messages[i];
+                    
+                    // Check if the message has expired
+                    if (!message.startTime) {
+                        message.startTime = now;
+                    }
+                    
+                    const elapsed = now - message.startTime;
+                    
+                    if (elapsed >= message.duration) {
+                        // Remove expired message
+                        this.messages.splice(i, 1);
+                    } else {
+                        // Update position and fade
+                        message.y -= 0.5; // Float upward
+                        message.alpha = 1.0 - (elapsed / message.duration); // Fade out
+                    }
+                }
+            }
+            
+            adaptToBiome() {
+                // Gradually change color based on biome
+                const targetColor = this.currentBiome.color;
+                const currentColor = this.color;
+                
+                // Parse colors to RGB
+                const getRGB = (color) => {
+                    const r = parseInt(color.slice(1, 3), 16);
+                    const g = parseInt(color.slice(3, 5), 16);
+                    const b = parseInt(color.slice(5, 7), 16);
+                    return [r, g, b];
+                };
+                
+                const currentRGB = getRGB(currentColor);
+                const targetRGB = getRGB(targetColor);
+                
+                // Slowly transition to target color (5% per second)
+                const newRGB = currentRGB.map((c, i) => {
+                    const diff = targetRGB[i] - c;
+                    return Math.round(c + diff * 0.005);
+                });
+                
+                // Convert back to hex
+                this.color = `#${newRGB.map(c => c.toString(16).padStart(2, '0')).join('')}`;
+            }
+
+            draw(ctx, cameraX, cameraY) {
+                // Calculate screen position
+                const screenX = this.x - cameraX;
+                const screenY = this.y - cameraY;
+                
+                // Draw evolution flash if active
+                if (this.evolutionFlash) {
+                    ctx.beginPath();
+                    ctx.arc(screenX, screenY, this.radius * 2, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(255, 255, 255, ' + (Math.random() * 0.5 + 0.2) + ')';
+                    ctx.fill();
+                    ctx.closePath();
+                }
+                
+                // Draw collection radius if collection mode is active
+                if (this.collectionMode) {
+                    ctx.beginPath();
+                    ctx.arc(screenX, screenY, this.collectionRadius, 0, Math.PI * 2);
+                    ctx.strokeStyle = 'rgba(0, 255, 0, 0.3)';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    ctx.closePath();
+                    
+                    // Add a pulsing effect
+                    const pulseRadius = this.collectionRadius * (0.8 + Math.sin(Date.now() / 300) * 0.2);
+                    ctx.beginPath();
+                    ctx.arc(screenX, screenY, pulseRadius, 0, Math.PI * 2);
+                    ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                    ctx.closePath();
+                }
+                
+                // Draw build mode indicator
+                if (this.isBuildMode) {
+                    // Draw a building outline preview
+                    ctx.strokeStyle = 'rgba(0, 255, 0, 0.7)';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(screenX - 30, screenY - 25, 60, 50);
+                    
+                    // Show selected building type
+                    ctx.fillStyle = 'white';
+                    ctx.font = '14px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`Build: ${this.selectedBuildingType}`, screenX, screenY - this.radius - 40);
+                }
+                
+                // Draw blob body
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.closePath();
+                
+                // If blob is dead, draw X eyes
+                if (this.isDead) {
+                    this.drawDeadFace(ctx, screenX, screenY);
+                } else {
+                    // Draw evolution features
+                    this.drawEvolutionFeatures(ctx, screenX, screenY);
+                    
+                    // Draw pet status and name if it's a pet
+                    if (this.isPet) {
+                        // Draw pet name above the blob
+                        ctx.fillStyle = '#FFFFFF';
+                        ctx.font = '16px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(this.petName, screenX, screenY - this.radius - 20);
+                        
+                        // Draw pet evolution level
+                        const petEvoLevel = Math.min(this.petEvolutions.length - 1, this.stats.evolutionLevel);
+                        ctx.font = '12px Arial';
+                        ctx.fillText(this.petEvolutions[petEvoLevel], screenX, screenY - this.radius - 5);
+                    } else if (this.tamingProgress > 0) {
+                        // Draw taming progress if not fully tamed
+                        ctx.fillStyle = '#FFFFFF';
+                        ctx.font = '12px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(`Taming: ${this.tamingProgress}%`, screenX, screenY - this.radius - 5);
+                    }
+                    
+                    // Draw simple face representing mood
+                    this.drawFace(ctx, screenX, screenY);
+                }
+                
+                // Draw messages
+                this.drawMessages(ctx, cameraX, cameraY);
+                
+                // Draw inventory if visible
+                this.inventory.draw(ctx, ctx.canvas.width, ctx.canvas.height);
+            }
+            
+            drawFace(ctx, x, y) {
+                const moodPercent = this.stats.mood / 100;
+                
+                // Eyes
+                const eyeRadius = this.radius * 0.15;
+                const eyeOffsetX = this.radius * 0.3;
+                const eyeOffsetY = this.radius * 0.2;
+                
+                // Left eye
+                ctx.beginPath();
+                ctx.arc(x - eyeOffsetX, y - eyeOffsetY, eyeRadius, 0, Math.PI * 2);
+                ctx.fillStyle = '#000';
+                ctx.fill();
+                
+                // Right eye
+                ctx.beginPath();
+                ctx.arc(x + eyeOffsetX, y - eyeOffsetY, eyeRadius, 0, Math.PI * 2);
+                ctx.fillStyle = '#000';
+                ctx.fill();
+                
+                // Mouth - changes based on mood
+                ctx.beginPath();
+                const mouthWidth = this.radius * 0.6;
+                
+                // Smiling mouth for happy, straight/frowning for sad
+                const startAngle = 0.2 * Math.PI;
+                const endAngle = 0.8 * Math.PI;
+                const mouthY = y + eyeOffsetY;
+                
+                ctx.arc(x, mouthY, mouthWidth / 2, startAngle, endAngle);
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+            
+            drawEvolutionFeatures(ctx, x, y) {
+                // Draw spikes if evolved
+                if (this.traits.spikes) {
+                    const spikeLength = this.radius * 0.4;
+                    const numSpikes = 8;
+                    
+                    ctx.strokeStyle = '#B8860B'; // Dark goldenrod
+                    ctx.lineWidth = 2;
+                    
+                    for (let i = 0; i < numSpikes; i++) {
+                        const angle = (i / numSpikes) * Math.PI * 2;
+                        const startX = x + Math.cos(angle) * this.radius;
+                        const startY = y + Math.sin(angle) * this.radius;
+                        const endX = x + Math.cos(angle) * (this.radius + spikeLength);
+                        const endY = y + Math.sin(angle) * (this.radius + spikeLength);
+                        
+                        ctx.beginPath();
+                        ctx.moveTo(startX, startY);
+                        ctx.lineTo(endX, endY);
+                        ctx.stroke();
+                    }
+                }
+                
+                // Draw fins if evolved
+                if (this.traits.fins) {
+                    const finWidth = this.radius * 0.8;
+                    const finHeight = this.radius * 0.6;
+                    
+                    // Draw left fin
+                    ctx.fillStyle = 'rgba(30, 144, 255, 0.7)'; // Semi-transparent blue
+                    ctx.beginPath();
+                    ctx.ellipse(
+                        x - this.radius * 0.8, 
+                        y, 
+                        finWidth / 2, 
+                        finHeight / 2, 
+                        -Math.PI / 4, 
+                        0, 
+                        Math.PI * 2
+                    );
+                    ctx.fill();
+                    
+                    // Draw right fin
+                    ctx.beginPath();
+                    ctx.ellipse(
+                        x + this.radius * 0.8, 
+                        y, 
+                        finWidth / 2, 
+                        finHeight / 2, 
+                        Math.PI / 4, 
+                        0, 
+                        Math.PI * 2
+                    );
+                    ctx.fill();
+                }
+                
+                // Draw fur if evolved
+                if (this.traits.furCoat) {
+                    ctx.fillStyle = 'rgba(139, 69, 19, 0.3)'; // Semi-transparent brown
+                    ctx.beginPath();
+                    ctx.arc(x, y, this.radius * 1.15, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                
+                // Draw camouflage if evolved
+                if (this.traits.camouflage) {
+                    const numPatches = 5;
+                    ctx.fillStyle = 'rgba(34, 139, 34, 0.5)'; // Semi-transparent green
+                    
+                    for (let i = 0; i < numPatches; i++) {
+                        const angle = Math.random() * Math.PI * 2;
+                        const distance = Math.random() * this.radius * 0.7;
+                        const patchX = x + Math.cos(angle) * distance;
+                        const patchY = y + Math.sin(angle) * distance;
+                        const patchSize = this.radius * 0.3;
+                        
+                        ctx.beginPath();
+                        ctx.arc(patchX, patchY, patchSize, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+                
+                // Draw glowing spots if evolved
+                if (this.traits.glowingSpots) {
+                    const numSpots = 6;
+                    const spotSize = this.radius * 0.15;
+                    
+                    for (let i = 0; i < numSpots; i++) {
+                        const angle = (i / numSpots) * Math.PI * 2;
+                        const spotX = x + Math.cos(angle) * (this.radius * 0.7);
+                        const spotY = y + Math.sin(angle) * (this.radius * 0.7);
+                        
+                        // Gradient for glow effect
+                        const gradient = ctx.createRadialGradient(
+                            spotX, spotY, 0,
+                            spotX, spotY, spotSize
+                        );
+                        gradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+                        gradient.addColorStop(1, 'rgba(255, 255, 200, 0)');
+                        
+                        ctx.fillStyle = gradient;
+                        ctx.beginPath();
+                        ctx.arc(spotX, spotY, spotSize, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+            }
+            
+            drawDeadFace(ctx, x, y) {
+                const eyeOffset = this.radius * 0.3;
+                
+                // Draw X eyes
+                ctx.strokeStyle = '#FF0000';
+                ctx.lineWidth = 3;
+                
+                // Left eye X
+                ctx.beginPath();
+                ctx.moveTo(x - eyeOffset - 5, y - eyeOffset - 5);
+                ctx.lineTo(x - eyeOffset + 5, y - eyeOffset + 5);
+                ctx.moveTo(x - eyeOffset + 5, y - eyeOffset - 5);
+                ctx.lineTo(x - eyeOffset - 5, y - eyeOffset + 5);
+                ctx.stroke();
+                
+                // Right eye X
+                ctx.beginPath();
+                ctx.moveTo(x + eyeOffset - 5, y - eyeOffset - 5);
+                ctx.lineTo(x + eyeOffset + 5, y - eyeOffset + 5);
+                ctx.moveTo(x + eyeOffset + 5, y - eyeOffset - 5);
+                ctx.lineTo(x + eyeOffset - 5, y - eyeOffset + 5);
+                ctx.stroke();
+                
+                // Straight line mouth
+                ctx.beginPath();
+                ctx.moveTo(x - this.radius * 0.3, y + this.radius * 0.2);
+                ctx.lineTo(x + this.radius * 0.3, y + this.radius * 0.2);
+                ctx.stroke();
+            }
+            
+            drawMessages(ctx, cameraX, cameraY) {
+                ctx.textAlign = 'center';
+                ctx.font = '14px Arial';
+                
+                this.messages.forEach(message => {
+                    // Calculate screen position for the message
+                    const screenX = message.x - cameraX;
+                    const screenY = message.y - cameraY;
+                    
+                    // Draw message with fading effect
+                    ctx.fillStyle = `rgba(255, 255, 255, ${message.alpha})`;
+                    ctx.strokeStyle = `rgba(0, 0, 0, ${message.alpha})`;
+                    ctx.lineWidth = 3;
+                    
+                    // Draw text stroke for better visibility
+                    ctx.strokeText(message.text, screenX, screenY);
+                    ctx.fillText(message.text, screenX, screenY);
+                });
+                
+                // Reset text alignment
+                ctx.textAlign = 'left';
+            }
+            
+            checkEvolution() {
+                return this.stats.checkEvolution();
+            }
+            
+            evolve(evolutionDetails) {
+                const { level, dominantBiome, favoriteFood } = evolutionDetails;
+                
+                // Determine evolution traits based on the dominant biome and food
+                let newTraits = [];
+                
+                // Base size increase with each evolution, but cap it after level 10
+                if (level <= 10) {
+                    this.radius = 20 + (level * 2);
+                }
+                
+                // Increase inventory size every 3 levels
+                if (level % 3 === 0) {
+                    this.inventory.upgradeCapacity(4);
+                    newTraits.push('Inventory +4 slots');
+                }
+                
+                // Different evolution paths based on level
+                if (level <= 5) {
+                    // Early evolutions - same as before
+                    switch(level) {
+                        case 1:
+                            // First evolution - adapt to dominant biome
+                            if (dominantBiome === 'Desert') {
+                                this.traits.spikes = true;
+                                newTraits.push('Spikes');
+                                this.speed = 1.0; // Small speed increase
+                            } else if (dominantBiome === 'Water') {
+                                this.traits.fins = true;
+                                newTraits.push('Fins');
+                                this.speed = 1.1; // Small speed increase
+                            } else if (dominantBiome === 'Mountains') {
+                                this.traits.furCoat = true;
+                                newTraits.push('Fur Coat');
+                                this.speed = 1.0; // Small speed increase
+                            } else if (dominantBiome === 'Forest') {
+                                this.traits.camouflage = true;
+                                newTraits.push('Camouflage');
+                                this.speed = 1.0; // Small speed increase
+                            }
+                            break;
+                            
+                        case 2:
+                            // Second evolution - adapt based on diet
+                            if (favoriteFood === 'fish') {
+                                this.traits.fins = true;
+                                newTraits.push('Fins');
+                                this.speed = 0.7; // Minimal speed increase
+                            } else if (favoriteFood === 'berries' || favoriteFood === 'nuts') {
+                                this.speed = 0.65; // Minimal speed increase
+                                this.traits.size = 1.2;
+                                newTraits.push('Increased Size');
+                            } else if (favoriteFood === 'minerals') {
+                                this.traits.spikes = true; // Mineral-based spikes
+                                newTraits.push('Mineral Spikes');
+                                // Better energy from minerals
+                            }
+                            break;
+                            
+                        case 3:
+                            // Third evolution - special abilities
+                            this.traits.glowingSpots = true;
+                            newTraits.push('Glowing Spots');
+                            this.speed = 0.75; // Minimal speed increase
+                            this.traits.size = 1.5;
+                            newTraits.push('Advanced Size');
+                            break;
+                            
+                        case 4:
+                            // Fourth evolution - mastery of environment
+                            this.traits.spikes = true;
+                            this.traits.fins = true;
+                            this.traits.furCoat = true;
+                            this.traits.camouflage = true;
+                            newTraits.push('Environmental Mastery');
+                            this.speed = 0.8; // Minimal speed increase
+                            break;
+                            
+                        case 5:
+                            // Fifth evolution - advanced blob
+                            this.traits.size = 2.0;
+                            this.radius = 40;
+                            this.speed = 0.85; // Minimal speed increase
+                            newTraits.push('Advanced Blob Form');
+                            break;
+                    }
+                } else {
+                    // Higher level evolutions - add new traits based on level
+                    if (level % 5 === 0) {
+                        // Every 5 levels, increase speed very slightly
+                        this.speed += 0.1; // Small speed increase
+                        newTraits.push(`Speed +0.1`);
+                    }
+                    
+                    // Every odd level adds a random trait
+                    if (level % 2 === 1) {
+                        const traits = ['Armor', 'Tentacles', 'Venom', 'Telepathy', 'Magnetism', 
+                                        'Regeneration', 'Shapeshifting', 'Teleportation', 'Force Field'];
+                        const randomTrait = traits[Math.floor(Math.random() * traits.length)];
+                        newTraits.push(randomTrait);
+                    }
+                    
+                    // Cap maximum speed
+                    if (this.speed > 2.5) {
+                        this.speed = 2.5; // Max speed still slower than player's speed of 4
+                    }
+                }
+                
+                // Show more prominent evolution message with longer duration
+                this.showMessage(`★ EVOLUTION! LEVEL ${level} ★`, 5000);
+                
+                // Show traits message after a short delay, with longer duration
+                if (newTraits.length > 0) {
+                    setTimeout(() => {
+                        this.showMessage(`New traits: ${newTraits.join(', ')}`, 5000);
+                    }, 2000);
+                }
+                
+                // Add visual flash effect
+                this.evolutionFlash = true;
+                setTimeout(() => {
+                    this.evolutionFlash = false;
+                }, 1000);
+            }
+            
+            // Method to consume food given by a person
+            consumePersonFood(food) {
+                // Apply food effects
+                this.stats.feed(food.nutrientValue, food.type);
+                this.stats.rest(food.energyValue);
+                
+                // Increase taming progress when fed
+                if (!this.isPet) {
+                    this.tamingProgress += 5;
+                    if (this.tamingProgress >= 100) {
+                        this.isPet = true;
+                        this.tamingProgress = 100;
+                        this.showMessage("You've tamed the blob!", 3000);
+                    } else {
+                        this.showMessage(`Taming: ${this.tamingProgress}%`, 2000);
+                    }
+                } else {
+                    // Already a pet, show happiness
+                    this.showMessage("Yum! Thank you!", 2000);
+                }
+                
+                // Check for regular evolution based on experience
+                if (this.checkEvolution()) {
+                    const evolutionDetails = this.stats.getEvolutionDetails();
+                    this.evolve(evolutionDetails);
+                }
+            }
+
+            // Add building related methods
+            startBuilding(buildingType, buildingManager) {
+                if (!this.isBuildMode) return false;
+                
+                // Check if we can afford and build at the current location
+                if (buildingManager.canBuildAt(this.x - 30, this.y - 25, buildingType) && 
+                    buildingManager.canAffordBuilding(buildingType, this.inventory)) {
+                    
+                    // Consume resources
+                    if (buildingManager.consumeResources(buildingType, this.inventory)) {
+                        // Add the new building
+                        const building = buildingManager.addBuilding(this.x - 30, this.y - 25, buildingType);
+                        
+                        if (building) {
+                            this.showMessage(`Started building a ${buildingType}!`, 3000);
+                            return true;
+                        }
+                    } else {
+                        this.showMessage("Not enough resources!", 2000);
+                    }
+                } else {
+                    this.showMessage("Can't build here!", 2000);
+                }
+                
+                return false;
+            }
+            
+            workOnBuilding(building) {
+                // Blob can work on buildings to complete them
+                const constructionRate = 0.5 * (1 + this.stats.evolutionLevel * 0.1); // Faster with higher evolution
+                
+                if (!building.completed) {
+                    const completed = building.continueConstruction(constructionRate);
+                    
+                    if (completed) {
+                        this.showMessage(`${building.type} construction completed!`, 3000);
+                        return true;
+                    } else {
+                        // Show occasional progress updates
+                        if (Math.random() < 0.05) {
+                            this.showMessage(`Building: ${Math.round(building.constructionProgress)}%`, 1000);
+                        }
+                    }
+                }
+                
+                return false;
+            }
+        }
+
+        // World class
+        class World {
+            constructor(canvas) {
+                this.canvas = canvas;
+                this.biomeManager = new BiomeManager(canvas.width, canvas.height, 50); // 50px tile size
+                
+                // Get the world size
+                const worldSize = this.biomeManager.getWorldSize();
+                this.worldWidth = worldSize.width;
+                this.worldHeight = worldSize.height;
+                
+                // Camera position (starts centered on the world)
+                this.cameraX = 0;
+                this.cameraY = 0;
+            }
+            
+            // Update camera to follow the blob
+            updateCamera(blob, canvas) {
+                // Calculate the center position for the camera
+                let targetX = blob.x - canvas.width / 2;
+                let targetY = blob.y - canvas.height / 2;
+                
+                // Handle camera position for wrapped world
+                // Instead of limiting to boundaries, we wrap around
+                this.cameraX = targetX;
+                this.cameraY = targetY;
+                
+                // Normalize camera position to ensure we're drawing biomes correctly
+                this.normalizedCameraX = ((this.cameraX % this.worldWidth) + this.worldWidth) % this.worldWidth;
+                this.normalizedCameraY = ((this.cameraY % this.worldHeight) + this.worldHeight) % this.worldHeight;
+            }
+
+            draw(ctx) {
+                // Draw biomes with camera offset
+                this.biomeManager.draw(ctx, this.normalizedCameraX, this.normalizedCameraY, this.canvas.width, this.canvas.height);
+                
+                // For a wrapped world, we need to draw the edges that wrap around
+                // This ensures seamless transitions when moving across the world boundaries
+                this.drawWrappedEdges(ctx);
+                
+                // Draw world border (as a reference, but not as a barrier)
+                ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(-this.normalizedCameraX, -this.normalizedCameraY, this.worldWidth, this.worldHeight);
+            }
+            
+            drawWrappedEdges(ctx) {
+                const viewportWidth = this.canvas.width;
+                const viewportHeight = this.canvas.height;
+                
+                // Only draw wrapped edges if we're near the world boundaries
+                const nearRightEdge = this.normalizedCameraX + viewportWidth > this.worldWidth;
+                const nearBottomEdge = this.normalizedCameraY + viewportHeight > this.worldHeight;
+                
+                if (nearRightEdge) {
+                    // Draw the left side of the world on the right edge of the viewport
+                    this.biomeManager.draw(
+                        ctx, 
+                        this.normalizedCameraX - this.worldWidth, 
+                        this.normalizedCameraY,
+                        viewportWidth,
+                        viewportHeight
+                    );
+                }
+                
+                if (nearBottomEdge) {
+                    // Draw the top of the world on the bottom edge of the viewport
+                    this.biomeManager.draw(
+                        ctx,
+                        this.normalizedCameraX,
+                        this.normalizedCameraY - this.worldHeight,
+                        viewportWidth,
+                        viewportHeight
+                    );
+                }
+                
+                if (nearRightEdge && nearBottomEdge) {
+                    // Draw the top-left corner of the world on the bottom-right corner of the viewport
+                    this.biomeManager.draw(
+                        ctx,
+                        this.normalizedCameraX - this.worldWidth,
+                        this.normalizedCameraY - this.worldHeight,
+                        viewportWidth,
+                        viewportHeight
+                    );
+                }
+            }
+            
+            getBiomeAt(x, y) {
+                // Wrap coordinates for sphere-like world
+                const wrappedX = ((x % this.worldWidth) + this.worldWidth) % this.worldWidth;
+                const wrappedY = ((y % this.worldHeight) + this.worldHeight) % this.worldHeight;
+                return this.biomeManager.getBiomeAt(wrappedX, wrappedY);
+            }
+            
+            // Convert screen coordinates to world coordinates
+            screenToWorld(screenX, screenY) {
+                return {
+                    x: screenX + this.cameraX,
+                    y: screenY + this.cameraY
+                };
+            }
+            
+            // Convert world coordinates to screen coordinates
+            worldToScreen(worldX, worldY) {
+                // Calculate the shortest distance considering wrap-around
+                const dx = (worldX - this.cameraX + this.worldWidth / 2) % this.worldWidth - this.worldWidth / 2;
+                const dy = (worldY - this.cameraY + this.worldHeight / 2) % this.worldHeight - this.worldHeight / 2;
+                
+                return {
+                    x: dx + this.canvas.width / 2,
+                    y: dy + this.canvas.height / 2
+                };
+            }
+        }
+
+        // Stats Display class
+        class StatsDisplay {
+            constructor(canvas) {
+                this.canvas = canvas;
+                // Stats panel dimensions
+                this.panelWidth = 250;
+                this.panelHeight = 230; // Increased height for traits display
+                this.barWidth = 120;
+            }
+            
+            draw(ctx, stats, currentBiome, traits) {
+                const { hunger, energy, temperature, mood, health, experience, evolutionLevel, foodCounter } = stats;
+                
+                // Background for stats panel
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(10, 10, this.panelWidth, this.panelHeight);
+                
+                // Set text style
+                ctx.font = '16px Arial';
+                ctx.fillStyle = 'white';
+                
+                // Draw stats headings and values
+                ctx.fillText('Blob Stats:', 20, 30);
+                
+                // Hunger bar
+                this.drawStatBar(ctx, 'Hunger', hunger, 20, 45, this.getColorForStat(hunger, true));
+                
+                // Energy bar
+                this.drawStatBar(ctx, 'Energy', energy, 20, 65, this.getColorForStat(energy, true));
+                
+                // Health bar
+                this.drawStatBar(ctx, 'Health', health, 20, 85, this.getColorForStat(health, true));
+                
+                // Temperature (now in Celsius)
+                this.drawTemperatureBar(ctx, temperature, 20, 105);
+                
+                // Mood bar
+                this.drawStatBar(ctx, 'Mood', mood, 20, 125, this.getColorForStat(mood, true));
+                
+                // Experience bar
+                this.drawExperienceBar(ctx, stats, 20, 145);
+                
+                // Evolution level and current biome
+                ctx.fillText(`Evolution: Level ${evolutionLevel}`, 20, 165);
+                if (currentBiome) {
+                    ctx.fillText(`Current Biome: ${currentBiome.type}`, 20, 185);
+                }
+                
+                // Food counter - updated text to show instant evolution
+                ctx.fillText(`Food: Evolve On Eat`, 20, 205);
+                
+                // Traits display
+                if (traits) {
+                    const activeTraits = [];
+                    if (traits.spikes) activeTraits.push('Spikes');
+                    if (traits.fins) activeTraits.push('Fins');
+                    if (traits.furCoat) activeTraits.push('Fur');
+                    if (traits.camouflage) activeTraits.push('Camo');
+                    if (traits.glowingSpots) activeTraits.push('Glow');
+                    
+                    const traitsText = activeTraits.length > 0 
+                        ? `Traits: ${activeTraits.join(', ')}` 
+                        : 'Traits: None';
+                    
+                    ctx.fillText(traitsText, 20, 225);
+                }
+                
+                // Reset text color
+                ctx.fillStyle = 'white';
+            }
+            
+            drawStatBar(ctx, label, value, x, y, color) {
+                // Draw label
+                ctx.fillStyle = 'white';
+                ctx.fillText(label + ':', x, y);
+                
+                // Draw background bar
+                ctx.fillStyle = '#444';
+                ctx.fillRect(x + 70, y - 12, this.barWidth, 15);
+                
+                // Draw value bar
+                ctx.fillStyle = color;
+                // Make sure value doesn't exceed bar width
+                const barValue = Math.min(value, this.barWidth);
+                ctx.fillRect(x + 70, y - 12, barValue, 15);
+                
+                // Draw value text
+                ctx.fillStyle = 'white';
+                ctx.fillText(Math.round(value) + '%', x + this.barWidth + 75, y);
+            }
+            
+            drawTemperatureBar(ctx, temperature, x, y) {
+                // Draw label
+                ctx.fillStyle = 'white';
+                ctx.fillText('Temp:', x, y);
+                
+                // Draw background bar
+                ctx.fillStyle = '#444';
+                ctx.fillRect(x + 70, y - 12, this.barWidth, 15);
+                
+                // Map temperature from Celsius (-10 to 45) to bar width (0 to barWidth)
+                const minTemp = -10;
+                const maxTemp = 45;
+                const tempRange = maxTemp - minTemp;
+                const normalizedTemp = (temperature - minTemp) / tempRange;
+                const barValue = normalizedTemp * this.barWidth;
+                
+                // Draw value bar
+                ctx.fillStyle = this.getTemperatureColor(temperature);
+                ctx.fillRect(x + 70, y - 12, barValue, 15);
+                
+                // Draw value text with °C
+                ctx.fillStyle = 'white';
+                ctx.fillText(`${Math.round(temperature)}°C`, x + this.barWidth + 75, y);
+            }
+            
+            drawExperienceBar(ctx, stats, x, y) {
+                const progressPercent = stats.getExperienceProgress();
+                
+                // Draw label
+                ctx.fillStyle = 'white';
+                ctx.fillText('XP:', x, y);
+                
+                // Draw background bar
+                ctx.fillStyle = '#444';
+                ctx.fillRect(x + 70, y - 12, this.barWidth, 15);
+                
+                // Draw progress bar
+                ctx.fillStyle = '#9C27B0'; // Purple for experience
+                const barValue = (progressPercent / 100) * this.barWidth;
+                ctx.fillRect(x + 70, y - 12, barValue, 15);
+                
+                // Draw experience text
+                ctx.fillStyle = 'white';
+                ctx.fillText(`${Math.round(stats.experience)}`, x + this.barWidth + 75, y);
+            }
+            
+            getColorForStat(value, highIsGood = true) {
+                if (highIsGood) {
+                    if (value > 75) return '#4CAF50'; // Green for good
+                    if (value > 50) return '#FFC107'; // Yellow for medium
+                    if (value > 25) return '#FF9800'; // Orange for low
+                    return '#F44336'; // Red for critical
+                } else {
+                    if (value < 25) return '#4CAF50'; // Green for good (low value)
+                    if (value < 50) return '#FFC107'; // Yellow for medium
+                    if (value < 75) return '#FF9800'; // Orange for high
+                    return '#F44336'; // Red for critical (high value)
+                }
+            }
+            
+            getTemperatureColor(temperature) {
+                if (temperature < 0) return '#2196F3';      // Blue for freezing
+                if (temperature < 10) return '#90CAF9';     // Light blue for cold
+                if (temperature < 20) return '#4CAF50';     // Green for cool
+                if (temperature < 30) return '#FFC107';     // Yellow for warm
+                return '#F44336';                           // Red for hot
+            }
+        }
+
+        // Person class to interact with the blob
+        class Person {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.width = 30;
+                this.height = 60;
+                this.color = '#FF9966'; // Skin tone
+                this.speed = 4;
+                this.keys = {
+                    KeyW: false,
+                    KeyA: false,
+                    KeyS: false,
+                    KeyD: false
+                };
+                this.direction = 'down'; // facing direction: up, down, left, right
+                
+                // Initialize inventory system
+                this.inventory = new Inventory();
+                this.inventory.maxSlots = 20; // Give person more inventory slots
+                this.activeFood = null;
+                this.isFeeding = false;
+                this.foodCircle = {
+                    x: 0, 
+                    y: 0, 
+                    radius: 15,
+                    color: '#FFA500'
+                };
+                
+                // Store canvas reference
+                this.canvas = document.getElementById('gameCanvas');
+                
+                this.setupControls();
+                
+                // Setup mouse click handler for inventory
+                window.addEventListener('click', (e) => {
+                    const rect = this.canvas.getBoundingClientRect();
+                    const canvasX = e.clientX - rect.left;
+                    const canvasY = e.clientY - rect.top;
+                    
+                    // Handle inventory click
+                    if (this.inventory.visible) {
+                        this.inventory.handleClick(canvasX, canvasY, this.canvas.width, this.canvas.height);
+                        // Update active food based on selected item
+                        const selectedItem = this.inventory.items[this.inventory.selectedItem];
+                        console.log('Selected item for feeding:', selectedItem);
+                        
+                        if (selectedItem && selectedItem.type === 'resource') {
+                            this.activeFood = {
+                                type: selectedItem.name,
+                                nutrientValue: 10,
+                                energyValue: 5
+                            };
+                            
+                            // Update food circle color based on food type
+                            switch(selectedItem.name.toLowerCase()) {
+                                case 'berries': this.foodCircle.color = '#CC0066'; break;
+                                case 'nuts': this.foodCircle.color = '#8B4513'; break;
+                                case 'cactus': this.foodCircle.color = '#7FFF00'; break;
+                                case 'fish': this.foodCircle.color = '#4682B4'; break;
+                                case 'minerals': this.foodCircle.color = '#B8B8B8'; break;
+                                default: this.foodCircle.color = '#FFFFFF';
+                            }
+                            console.log('Updated active food:', this.activeFood);
+                            this.showMessage(`Selected ${selectedItem.name} for feeding`);
+                        } else {
+                            this.activeFood = null;
+                            console.log('No valid food item selected');
+                        }
+                    }
+                });
+            }
+            
+            setupControls() {
+                window.addEventListener('keydown', (e) => {
+                    if (this.keys.hasOwnProperty(e.code)) {
+                        this.keys[e.code] = true;
+                    }
+                    
+                    // Press Q to feed blob with currently selected food
+                    if (e.code === 'KeyQ') {
+                        if (this.inventory.selectedItem && this.inventory.items[this.inventory.selectedItem]) {
+                            this.isFeeding = true;
+                            const selectedItem = this.inventory.items[this.inventory.selectedItem];
+                            console.log('Feeding with selected item:', selectedItem);
+                            
+                            this.activeFood = {
+                                type: selectedItem.name,
+                                nutrientValue: 10,
+                                energyValue: 5
+                            };
+                            
+                            // Update food circle color based on food type
+                            switch(selectedItem.name.toLowerCase()) {
+                                case 'berries': this.foodCircle.color = '#CC0066'; break;
+                                case 'nuts': this.foodCircle.color = '#8B4513'; break;
+                                case 'cactus': this.foodCircle.color = '#7FFF00'; break;
+                                case 'fish': this.foodCircle.color = '#4682B4'; break;
+                                case 'minerals': this.foodCircle.color = '#B8B8B8'; break;
+                                default: this.foodCircle.color = '#FFFFFF';
+                            }
+                            
+                            // Position the food circle
+                            switch(this.direction) {
+                                case 'up':
+                                    this.foodCircle.x = this.x;
+                                    this.foodCircle.y = this.y - this.height/2 - this.foodCircle.radius * 2;
+                                    break;
+                                case 'down':
+                                    this.foodCircle.x = this.x;
+                                    this.foodCircle.y = this.y + this.height/2 + this.foodCircle.radius * 2;
+                                    break;
+                                case 'left':
+                                    this.foodCircle.x = this.x - this.width/2 - this.foodCircle.radius * 2;
+                                    this.foodCircle.y = this.y;
+                                    break;
+                                case 'right':
+                                    this.foodCircle.x = this.x + this.width/2 + this.foodCircle.radius * 2;
+                                    this.foodCircle.y = this.y;
+                                    break;
+                            }
+                        } else {
+                            console.log('No food selected for feeding');
+                            this.showMessage('Select food from inventory first!');
+                        }
+                    }
+                });
+
+                window.addEventListener('keyup', (e) => {
+                    if (this.keys.hasOwnProperty(e.code)) {
+                        this.keys[e.code] = false;
+                    }
+                    
+                    if (e.code === 'KeyQ') {
+                        this.isFeeding = false;
+                    }
+                });
+            }
+            
+            // Check if person is collecting food
+            isCollectingFood(food) {
+                const dx = this.x - food.x;
+                const dy = this.y - food.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                return distance < (this.width/2 + food.radius);
+            }
+            
+            update(worldWidth, worldHeight) {
+                // Calculate movement based on keys
+                let dx = 0;
+                let dy = 0;
+                
+                if (this.keys.KeyW) {
+                    dy -= this.speed;
+                    this.direction = 'up';
+                }
+                if (this.keys.KeyS) {
+                    dy += this.speed;
+                    this.direction = 'down';
+                }
+                if (this.keys.KeyA) {
+                    dx -= this.speed;
+                    this.direction = 'left';
+                }
+                if (this.keys.KeyD) {
+                    dx += this.speed;
+                    this.direction = 'right';
+                }
+                
+                // Move the person
+                this.x += dx;
+                this.y += dy;
+                
+                // World wrap-around (sphere-like)
+                if (this.x < 0) this.x = worldWidth;
+                if (this.x > worldWidth) this.x = 0;
+                if (this.y < 0) this.y = worldHeight;
+                if (this.y > worldHeight) this.y = 0;
+                
+                // Update food circle position if feeding
+                if (this.isFeeding) {
+                    switch(this.direction) {
+                        case 'up':
+                            this.foodCircle.x = this.x;
+                            this.foodCircle.y = this.y - this.height/2 - this.foodCircle.radius * 2;
+                            break;
+                        case 'down':
+                            this.foodCircle.x = this.x;
+                            this.foodCircle.y = this.y + this.height/2 + this.foodCircle.radius * 2;
+                            break;
+                        case 'left':
+                            this.foodCircle.x = this.x - this.width/2 - this.foodCircle.radius * 2;
+                            this.foodCircle.y = this.y;
+                            break;
+                        case 'right':
+                            this.foodCircle.x = this.x + this.width/2 + this.foodCircle.radius * 2;
+                            this.foodCircle.y = this.y;
+                            break;
+                    }
+                }
+            }
+            
+            draw(ctx, cameraX, cameraY) {
+                // Calculate screen position
+                const screenX = this.x - cameraX;
+                const screenY = this.y - cameraY;
+                
+                // Only draw if on screen
+                if (screenX + this.width < 0 || screenX > ctx.canvas.width || 
+                    screenY + this.height < 0 || screenY > ctx.canvas.height) {
+                    return;
+                }
+                
+                // Draw body
+                ctx.fillStyle = this.color;
+                ctx.fillRect(screenX - this.width/2, screenY - this.height/2, this.width, this.height);
+                
+                // Draw head
+                ctx.beginPath();
+                ctx.arc(screenX, screenY - this.height/2, this.width/2, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                
+                // Draw face
+                this.drawFace(ctx, screenX, screenY - this.height/2);
+                
+                // Draw food circle if feeding
+                if (this.isFeeding) {
+                    const foodScreenX = this.foodCircle.x - cameraX;
+                    const foodScreenY = this.foodCircle.y - cameraY;
+                    
+                    ctx.beginPath();
+                    ctx.arc(foodScreenX, foodScreenY, this.foodCircle.radius, 0, Math.PI * 2);
+                    ctx.fillStyle = this.foodCircle.color;
+                    ctx.fill();
+                    
+                    // Add a little shine/highlight to the food
+                    ctx.beginPath();
+                    ctx.arc(
+                        foodScreenX - this.foodCircle.radius/3, 
+                        foodScreenY - this.foodCircle.radius/3, 
+                        this.foodCircle.radius/3, 
+                        0, Math.PI * 2
+                    );
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                    ctx.fill();
+                }
+                
+                // Update and draw messages
+                this.updateMessages();
+                this.drawMessages(ctx, cameraX, cameraY);
+
+                // Draw inventory if visible
+                if (this.inventory.visible) {
+                    this.inventory.draw(ctx, ctx.canvas.width, ctx.canvas.height);
+                }
+            }
+            
+            // Check proximity to blob
+            isNearBlob(blob, proximityDistance = 80) {
+                const dx = this.x - blob.x;
+                const dy = this.y - blob.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                return distance < proximityDistance;
+            }
+            
+            // Check if food circle is touching the blob
+            isFoodTouchingBlob(blob) {
+                if (!this.isFeeding) return false;
+                
+                const dx = this.foodCircle.x - blob.x;
+                const dy = this.foodCircle.y - blob.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                return distance < (this.foodCircle.radius + blob.radius);
+            }
+            
+            // Show a message above the person
+            showMessage(text, duration = 1500) {
+                if (!this.messages) this.messages = [];
+                this.messages.push({
+                    text: text,
+                    x: this.x,
+                    y: this.y - this.height - 20,
+                    alpha: 1.0,
+                    duration: duration,
+                    startTime: Date.now()
+                });
+            }
+            
+            // Update and draw messages
+            updateMessages() {
+                if (!this.messages) return;
+                const now = Date.now();
+                
+                for (let i = this.messages.length - 1; i >= 0; i--) {
+                    const message = this.messages[i];
+                    const elapsed = now - message.startTime;
+                    
+                    if (elapsed >= message.duration) {
+                        this.messages.splice(i, 1);
+                    } else {
+                        message.y -= 0.5; // Float upward
+                        message.alpha = 1.0 - (elapsed / message.duration);
+                    }
+                }
+            }
+            
+            drawMessages(ctx, cameraX, cameraY) {
+                if (!this.messages || this.messages.length === 0) return;
+                
+                ctx.save();
+                ctx.textAlign = 'center';
+                ctx.font = '14px Arial';
+                
+                this.messages.forEach(message => {
+                    const screenX = message.x - cameraX;
+                    const screenY = message.y - cameraY;
+                    
+                    ctx.fillStyle = `rgba(255, 255, 255, ${message.alpha})`;
+                    ctx.strokeStyle = `rgba(0, 0, 0, ${message.alpha})`;
+                    ctx.lineWidth = 3;
+                    
+                    ctx.strokeText(message.text, screenX, screenY);
+                    ctx.fillText(message.text, screenX, screenY);
+                });
+                
+                ctx.restore();
+            }
+
+            drawFace(ctx, x, y) {
+                ctx.fillStyle = '#000000';
+                
+                // Draw eyes and mouth based on direction
+                if (this.direction === 'left') {
+                    // Left-facing eyes and mouth
+                    ctx.fillRect(x - 12, y - 5, 4, 4); // Left eye
+                    ctx.fillRect(x - 5, y + 5, 8, 2); // Mouth
+                } else if (this.direction === 'right') {
+                    // Right-facing eyes and mouth
+                    ctx.fillRect(x + 8, y - 5, 4, 4); // Right eye
+                    ctx.fillRect(x - 3, y + 5, 8, 2); // Mouth
+                } else {
+                    // Front-facing eyes and mouth
+                    ctx.fillRect(x - 8, y - 5, 4, 4); // Left eye
+                    ctx.fillRect(x + 4, y - 5, 4, 4); // Right eye
+                    ctx.fillRect(x - 5, y + 5, 10, 2); // Mouth
+                }
+                
+                // Draw currently selected food above person
+                if (this.activeFood) {
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.font = '14px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`${this.activeFood.type}`, x, y - 15);
+                }
+            }
+        }
+
+        // Building class
+        class Building {
+            constructor(x, y, type, size) {
+                this.x = x;
+                this.y = y;
+                this.type = type; // 'house', 'farm', 'tower', etc.
+                this.size = size || 1; // Size multiplier
+                this.width = 60 * this.size;
+                this.height = 50 * this.size;
+                this.color = this.getBuildingColor();
+                this.level = 1;
+                this.health = 100;
+                this.completed = false; // Buildings start incomplete
+                this.constructionProgress = 0; // 0 to 100
+            }
+            
+            getBuildingColor() {
+                switch(this.type) {
+                    case 'house': return '#8B4513'; // Brown
+                    case 'farm': return '#228B22'; // Green
+                    case 'tower': return '#708090'; // Slate gray
+                    case 'workshop': return '#B8860B'; // Dark golden
+                    default: return '#A0522D'; // Sienna
+                }
+            }
+            
+            update() {
+                // Buildings can have update logic
+                // For example, farms could generate food items over time
+            }
+            
+            draw(ctx, cameraX, cameraY) {
+                // Calculate screen position
+                const screenX = this.x - cameraX;
+                const screenY = this.y - cameraY;
+                
+                // Only draw if on screen or near screen
+                if (screenX + this.width < -100 || screenX > ctx.canvas.width + 100 || 
+                    screenY + this.height < -100 || screenY > ctx.canvas.height + 100) {
+                    return;
+                }
+                
+                // Draw foundation
+                ctx.fillStyle = '#696969'; // Dim gray for foundation
+                ctx.fillRect(screenX, screenY + this.height * 0.8, this.width, this.height * 0.2);
+                
+                if (this.completed) {
+                    this.drawCompletedBuilding(ctx, screenX, screenY);
+                } else {
+                    this.drawConstructionSite(ctx, screenX, screenY);
+                }
+            }
+            
+            drawCompletedBuilding(ctx, x, y) {
+                switch(this.type) {
+                    case 'house':
+                        // Main structure
+                        ctx.fillStyle = this.color;
+                        ctx.fillRect(x, y, this.width, this.height * 0.8);
+                        
+                        // Roof
+                        ctx.beginPath();
+                        ctx.moveTo(x - 10, y);
+                        ctx.lineTo(x + this.width + 10, y);
+                        ctx.lineTo(x + this.width / 2, y - this.height * 0.4);
+                        ctx.closePath();
+                        ctx.fillStyle = '#A52A2A'; // Brown roof
+                        ctx.fill();
+                        
+                        // Door
+                        ctx.fillStyle = '#8B4513'; // Dark brown
+                        ctx.fillRect(x + this.width * 0.4, y + this.height * 0.4, this.width * 0.2, this.height * 0.4);
+                        
+                        // Windows
+                        ctx.fillStyle = '#87CEEB'; // Sky blue
+                        ctx.fillRect(x + this.width * 0.15, y + this.height * 0.2, this.width * 0.2, this.height * 0.2);
+                        ctx.fillRect(x + this.width * 0.65, y + this.height * 0.2, this.width * 0.2, this.height * 0.2);
+                        break;
+                        
+                    case 'farm':
+                        // Field
+                        ctx.fillStyle = '#7CFC00'; // Lawn green
+                        ctx.fillRect(x, y, this.width, this.height * 0.6);
+                        
+                        // Crops (rows)
+                        ctx.fillStyle = '#006400'; // Dark green
+                        for (let i = 0; i < 5; i++) {
+                            ctx.fillRect(x + this.width * 0.1, y + this.height * (0.1 + i * 0.1), this.width * 0.8, this.height * 0.05);
+                        }
+                        
+                        // Small shed
+                        ctx.fillStyle = '#8B4513'; // Brown
+                        ctx.fillRect(x + this.width * 0.7, y + this.height * 0.1, this.width * 0.2, this.height * 0.3);
+                        break;
+                        
+                    case 'tower':
+                        // Tower base
+                        ctx.fillStyle = this.color;
+                        ctx.fillRect(x + this.width * 0.25, y, this.width * 0.5, this.height * 0.8);
+                        
+                        // Tower top
+                        ctx.beginPath();
+                        ctx.moveTo(x + this.width * 0.2, y);
+                        ctx.lineTo(x + this.width * 0.8, y);
+                        ctx.lineTo(x + this.width * 0.6, y - this.height * 0.3);
+                        ctx.lineTo(x + this.width * 0.4, y - this.height * 0.3);
+                        ctx.closePath();
+                        ctx.fillStyle = '#36454F'; // Charcoal
+                        ctx.fill();
+                        
+                        // Windows
+                        ctx.fillStyle = '#000000'; // Black
+                        ctx.fillRect(x + this.width * 0.4, y + this.height * 0.1, this.width * 0.2, this.height * 0.1);
+                        ctx.fillRect(x + this.width * 0.4, y + this.height * 0.3, this.width * 0.2, this.height * 0.1);
+                        ctx.fillRect(x + this.width * 0.4, y + this.height * 0.5, this.width * 0.2, this.height * 0.1);
+                        break;
+                        
+                    case 'workshop':
+                        // Main structure
+                        ctx.fillStyle = this.color;
+                        ctx.fillRect(x, y, this.width, this.height * 0.7);
+                        
+                        // Roof
+                        ctx.fillStyle = '#2F4F4F'; // Dark slate gray
+                        ctx.beginPath();
+                        ctx.moveTo(x, y);
+                        ctx.lineTo(x + this.width, y);
+                        ctx.lineTo(x + this.width, y - this.height * 0.2);
+                        ctx.lineTo(x, y - this.height * 0.2);
+                        ctx.closePath();
+                        ctx.fill();
+                        
+                        // Door and chimney
+                        ctx.fillStyle = '#8B4513'; // Dark brown
+                        ctx.fillRect(x + this.width * 0.4, y + this.height * 0.3, this.width * 0.2, this.height * 0.4);
+                        ctx.fillStyle = '#A52A2A'; // Brown
+                        ctx.fillRect(x + this.width * 0.8, y - this.height * 0.4, this.width * 0.1, this.height * 0.4);
+                        break;
+                        
+                    default:
+                        // Generic building
+                        ctx.fillStyle = this.color;
+                        ctx.fillRect(x, y, this.width, this.height * 0.8);
+                        break;
+                }
+                
+                // Show building type and level
+                ctx.fillStyle = 'white';
+                ctx.font = '12px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(`${this.type} (Level ${this.level})`, x + this.width / 2, y - this.height * 0.1);
+            }
+            
+            drawConstructionSite(ctx, x, y) {
+                // Draw scaffolding
+                ctx.strokeStyle = '#DAA520'; // Golden rod for scaffolding
+                ctx.lineWidth = 2;
+                
+                // Horizontal scaffold lines
+                for (let i = 0; i <= 3; i++) {
+                    const yPos = y + (this.height * 0.8 / 3) * i;
+                    ctx.beginPath();
+                    ctx.moveTo(x, yPos);
+                    ctx.lineTo(x + this.width, yPos);
+                    ctx.stroke();
+                }
+                
+                // Vertical scaffold lines
+                for (let i = 0; i <= 3; i++) {
+                    const xPos = x + (this.width / 3) * i;
+                    ctx.beginPath();
+                    ctx.moveTo(xPos, y);
+                    ctx.lineTo(xPos, y + this.height * 0.8);
+                    ctx.stroke();
+                }
+                
+                // Draw partial building based on progress
+                const progressHeight = (this.height * 0.8) * (this.constructionProgress / 100);
+                ctx.fillStyle = this.color;
+                ctx.fillRect(x, y + (this.height * 0.8) - progressHeight, this.width, progressHeight);
+                
+                // Show construction progress
+                ctx.fillStyle = 'white';
+                ctx.font = '14px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(`Building ${this.type}: ${Math.round(this.constructionProgress)}%`, 
+                            x + this.width / 2, y - 10);
+            }
+            
+            // Check if coordinates are inside this building
+            contains(x, y) {
+                return (
+                    x >= this.x && x <= this.x + this.width &&
+                    y >= this.y && y <= this.y + this.height
+                );
+            }
+            
+            // Continue construction of the building
+            continueConstruction(amount) {
+                this.constructionProgress += amount;
+                if (this.constructionProgress >= 100) {
+                    this.constructionProgress = 100;
+                    this.completed = true;
+                    return true; // Construction completed
+                }
+                return false; // Still under construction
+            }
+        }
+
+        // Building Manager class to handle multiple buildings
+        class BuildingManager {
+            constructor() {
+                this.buildings = [];
+                this.blueprints = {
+                    'house': {
+                        name: 'House',
+                        description: 'A simple shelter',
+                        resources: { 'Wood': 10, 'Stone': 5 },
+                        size: 1
+                    },
+                    'farm': {
+                        name: 'Farm',
+                        description: 'Produces food over time',
+                        resources: { 'Wood': 5, 'Berries': 10, 'Nuts': 5 },
+                        size: 1.2
+                    },
+                    'tower': {
+                        name: 'Tower',
+                        description: 'Keeps watch over a large area',
+                        resources: { 'Stone': 15, 'Wood': 5 },
+                        size: 0.8
+                    },
+                    'workshop': {
+                        name: 'Workshop',
+                        description: 'Crafts new items',
+                        resources: { 'Wood': 15, 'Stone': 10, 'Minerals': 5 },
+                        size: 1.1
+                    }
+                };
+            }
+            
+            addBuilding(x, y, type) {
+                const blueprint = this.blueprints[type];
+                if (!blueprint) return null;
+                
+                const building = new Building(x, y, type, blueprint.size);
+                this.buildings.push(building);
+                return building;
+            }
+            
+            update() {
+                this.buildings.forEach(building => building.update());
+            }
+            
+            draw(ctx, cameraX, cameraY) {
+                this.buildings.forEach(building => building.draw(ctx, cameraX, cameraY));
+            }
+            
+            // Check if there's a building at the given position
+            getBuildingAt(x, y) {
+                return this.buildings.find(building => building.contains(x, y));
+            }
+            
+            // Check if we can build at this location (not overlapping with other buildings)
+            canBuildAt(x, y, type) {
+                const blueprint = this.blueprints[type];
+                if (!blueprint) return false;
+                
+                // Create a temporary building to check dimensions
+                const tempBuilding = new Building(x, y, type, blueprint.size);
+                
+                // Check if it overlaps with any existing building
+                for (const building of this.buildings) {
+                    if (this.checkOverlap(tempBuilding, building)) {
+                        return false;
+                    }
+                }
+                
+                return true;
+            }
+            
+            // Helper to check if two buildings overlap
+            checkOverlap(building1, building2) {
+                return !(building1.x + building1.width < building2.x || 
+                        building1.x > building2.x + building2.width || 
+                        building1.y + building1.height < building2.y || 
+                        building1.y > building2.y + building2.height);
+            }
+            
+            // Check if player has enough resources to build
+            canAffordBuilding(type, inventory) {
+                const blueprint = this.blueprints[type];
+                if (!blueprint) return false;
+                
+                // Check each required resource
+                for (const [resource, amount] of Object.entries(blueprint.resources)) {
+                    const item = Object.values(inventory.items).find(i => i.name === resource);
+                    if (!item || item.quantity < amount) {
+                        return false;
+                    }
+                }
+                
+                return true;
+            }
+            
+            // Consume resources to build
+            consumeResources(type, inventory) {
+                const blueprint = this.blueprints[type];
+                if (!blueprint) return false;
+                
+                // Remove each required resource
+                for (const [resource, amount] of Object.entries(blueprint.resources)) {
+                    const item = Object.values(inventory.items).find(i => i.name === resource);
+                    if (item && item.quantity >= amount) {
+                        inventory.removeItem(item.name, amount);
+                    } else {
+                        return false;
+                    }
+                }
+                
+                return true;
+            }
+        }
+
+        // Game class
+        class Game {
+            constructor() {
+                console.log('Game initializing...');
+                try {
+                    this.canvas = new Canvas();
+                    console.log('Canvas created');
+                    
+                    this.world = new World(this.canvas.canvas);
+                    console.log('World created');
+                    
+                    // Create blob in the center of the world
+                    const worldSize = this.world.biomeManager.getWorldSize();
+                    this.blob = new Blob(
+                        worldSize.width / 2,
+                        worldSize.height / 2
+                    );
+                    console.log('Blob created with stats:', this.blob.stats);
+                    
+                    // Create food manager
+                    this.foodManager = new FoodManager(worldSize.width, worldSize.height);
+                    console.log('Food manager created');
+                    
+                    // Create building manager instead of cage
+                    this.buildingManager = new BuildingManager();
+                    console.log('Building manager created');
+                    
+                    // Create a person
+                    this.person = new Person(
+                        worldSize.width / 2 - 200,
+                        worldSize.height / 2
+                    );
+                    console.log('Person created');
+                    
+                    // Set up the person's feed function
+                    this.person.feedBlob = () => {
+                        if (this.person.isNearBlob(this.blob) || this.person.isFoodTouchingBlob(this.blob)) {
+                            if (this.person.activeFood && this.person.inventory.selectedItem) {
+                                // Check if we have the selected item in inventory
+                                const selectedItem = this.person.inventory.items[this.person.inventory.selectedItem];
+                                if (!selectedItem || selectedItem.quantity <= 0) {
+                                    this.person.showMessage("Out of food!");
+                                    return;
+                                }
+
+                                console.log('Feeding blob:', this.person.activeFood);
+                                
+                                // Remove one item from inventory
+                                this.person.inventory.removeItem(selectedItem.name, 1);
+                                
+                                // Only feed if item was successfully removed
+                                this.blob.consumePersonFood(this.person.activeFood);
+                                
+                                // If blob is not a pet yet, check if it's tamed after feeding
+                                if (!this.blob.isPet && this.blob.tamingProgress >= 100) {
+                                    this.blob.isPet = true;
+                                    this.blob.owner = this.person;
+                                }
+
+                                // Stop feeding if we run out of items
+                                if (!this.person.inventory.items[this.person.inventory.selectedItem]) {
+                                    this.person.activeFood = null;
+                                    this.person.isFeeding = false;
+                                }
+                            }
+                        }
+                    };
+                    
+                    // Default to following the person with the camera
+                    this.followPerson = true;
+                    
+                    // Set up building placement and camera toggle
+                    window.addEventListener('keydown', (e) => {
+                        // Toggle camera follow target with P key
+                        if (e.code === 'KeyP') {
+                            this.followPerson = !this.followPerson;
+                            console.log('Camera following:', this.followPerson ? 'Person' : 'Blob');
+                        }
+                        
+                        // Place building with M key when in build mode
+                        if (e.code === 'KeyM' && this.blob.isBuildMode) {
+                            this.blob.startBuilding(this.blob.selectedBuildingType, this.buildingManager);
+                        }
+                        
+                        // Allow naming the pet with N key when not in build mode
+                        if (e.code === 'KeyN' && this.blob.isPet && !this.blob.isBuildMode && this.person.isNearBlob(this.blob)) {
+                            const newName = prompt('Enter a name for your pet blob:', this.blob.petName);
+                            if (newName && newName.trim() !== '') {
+                                this.blob.petName = newName.trim();
+                                console.log('Blob renamed to:', this.blob.petName);
+                            }
+                        }
+                    });
+                    
+                    this.statsDisplay = new StatsDisplay(this.canvas.canvas);
+                    console.log('Stats display created');
+                    
+                    this.gameLoop();
+                    console.log('Game loop started');
+                } catch (error) {
+                    console.error('Error initializing game:', error);
+                }
+            }
+
+            update() {
+                try {
+                    // Update food manager
+                    this.foodManager.update(this.world.biomeManager);
+                    
+                    // Update person
+                    this.person.update(
+                        this.world.worldWidth,
+                        this.world.worldHeight
+                    );
+                    
+                    // Update blob with world dimensions for wrap-around
+                    this.blob.update(
+                        this.world.worldWidth,
+                        this.world.worldHeight,
+                        this.world.biomeManager
+                    );
+                    
+                    // Check for food collisions
+                    this.foodManager.checkCollisions(this.blob);
+                    
+                    // Check if the food circle is touching the blob (continuous feeding)
+                    if (this.person.isFeeding && this.person.isFoodTouchingBlob(this.blob)) {
+                        this.person.feedBlob();
+                    }
+                    
+                    // Update camera to follow person or blob based on selection
+                    if (this.followPerson) {
+                        this.world.updateCamera(this.person, this.canvas.canvas);
+                    } else {
+                        this.world.updateCamera(this.blob, this.canvas.canvas);
+                    }
+                    
+                    // Update buildings
+                    this.buildingManager.update();
+                    
+                    // Check if blob is near a building to work on it
+                    if (!this.blob.isBuildMode) {
+                        for (const building of this.buildingManager.buildings) {
+                            if (!building.completed) {
+                                const dx = building.x + building.width/2 - this.blob.x;
+                                const dy = building.y + building.height/2 - this.blob.y;
+                                const distance = Math.sqrt(dx * dx + dy * dy);
+                                
+                                if (distance < building.width) {
+                                    this.blob.workOnBuilding(building);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Check if person is collecting food
+                    for (let i = 0; i < this.foodManager.foods.length; i++) {
+                        const food = this.foodManager.foods[i];
+                        if (!food.collected && this.person.isCollectingFood(food)) {
+                            // Add to person's inventory
+                            if (food.inventoryItem) {
+                                // Create a new instance of the inventory item
+                                const newItem = new InventoryItem(
+                                    food.inventoryItem.type,
+                                    food.inventoryItem.name,
+                                    food.inventoryItem.description,
+                                    food.inventoryItem.rarity,
+                                    food.inventoryItem.drawIcon  // Pass the drawing function
+                                );
+                                newItem.quantity = 1; // Ensure quantity is set to 1
+                                
+                                const success = this.person.inventory.addItem(newItem);
+                                if (success) {
+                                    food.collected = true;
+                                    console.log('Person collected:', food.type, 'Current inventory:', this.person.inventory.items);
+                                    // Show a message to indicate collection
+                                    this.person.showMessage(`Collected ${food.type}`);
+                                } else {
+                                    console.log('Inventory full!');
+                                    this.person.showMessage('Inventory full!');
+                                }
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error in update:', error);
+                }
+            }
+
+            draw() {
+                try {
+                    this.canvas.clear();
+                    
+                    // Draw world and biomes first
+                    this.world.draw(this.canvas.ctx);
+                    
+                    // Draw buildings instead of cage
+                    this.buildingManager.draw(
+                        this.canvas.ctx, 
+                        this.world.cameraX, 
+                        this.world.cameraY
+                    );
+                    
+                    // Draw food items
+                    this.foodManager.draw(
+                        this.canvas.ctx, 
+                        this.world.cameraX, 
+                        this.world.cameraY
+                    );
+                    
+                    // Draw person first (behind blob)
+                    this.person.draw(
+                        this.canvas.ctx,
+                        this.world.cameraX,
+                        this.world.cameraY
+                    );
+                    
+                    // Draw blob last (on top)
+                    this.blob.draw(
+                        this.canvas.ctx, 
+                        this.world.cameraX, 
+                        this.world.cameraY
+                    );
+                    
+                    // Draw stats
+                    this.statsDisplay.draw(
+                        this.canvas.ctx, 
+                        this.blob.stats, 
+                        this.blob.currentBiome,
+                        this.blob.traits
+                    );
+                    
+                    // Draw controls information
+                    this.drawControlsInfo();
+                } catch (error) {
+                    console.error('Error in draw:', error);
+                    console.error('Error details:', error.message);
+                }
+            }
+            
+            drawControlsInfo() {
+                const ctx = this.canvas.ctx;
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(this.canvas.canvas.width - 250, 10, 240, 240); // Increased height
+                
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = '14px Arial';
+                ctx.textAlign = 'left';
+                ctx.fillText('Controls:', this.canvas.canvas.width - 240, 30);
+                ctx.fillText('WASD - Move person', this.canvas.canvas.width - 240, 50);
+                ctx.fillText('Arrow Keys - Move blob', this.canvas.canvas.width - 240, 70);
+                ctx.fillText('1-4 - Select food', this.canvas.canvas.width - 240, 90);
+                ctx.fillText('Q - Feed blob (circle food)', this.canvas.canvas.width - 240, 110);
+                ctx.fillText('G - Toggle collection mode', this.canvas.canvas.width - 240, 130);
+                ctx.fillText('B - Toggle build mode', this.canvas.canvas.width - 240, 150);
+                ctx.fillText('N - Cycle building types', this.canvas.canvas.width - 240, 170);
+                ctx.fillText('M - Place selected building', this.canvas.canvas.width - 240, 190);
+                ctx.fillText('P - Toggle camera focus', this.canvas.canvas.width - 240, 210);
+                
+                // Show current camera focus
+                ctx.fillStyle = '#FFC107'; // Yellow for highlighting
+                ctx.fillText(`Camera following: ${this.followPerson ? 'Person' : 'Blob'}`, 
+                            this.canvas.canvas.width - 240, 230);
+                
+                // Reset alignment
+                ctx.textAlign = 'left';
+            }
+
+            gameLoop() {
+                this.update();
+                this.draw();
+                requestAnimationFrame(() => this.gameLoop());
+            }
+        }
+
+        // Start the game when the window loads
+        window.onload = () => {
+            console.log('Window loaded, starting game...');
+            new Game();
+        };
+    </script>
+</body>
+</html> 
