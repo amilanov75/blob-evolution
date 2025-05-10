@@ -23,6 +23,10 @@ A browser-based evolution game where you guide and train a blob through differen
 
 The game is built using vanilla JavaScript and HTML5 Canvas.
 
+## Testing
+
+Only tested on Windows 11
+
 ### File Structure
 
 - `blob-evolution/` - Main game directory
