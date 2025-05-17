@@ -1,83 +1,154 @@
-# Blob Evolution
+# Blob Evolution Game
 
-**Blob Evolution** is a browser-based game built over a long May Bank Holiday weekend — part of a friendly family coding challenge.
+A browser-based evolution game where you guide and train a blob through different biomes, helping it evolve and develop new traits.
 
-- 💻 Created using Cursor (AI-enhanced code editor)
-- 👾 Game concept and mechanics by a 7-year-old with a bit of help from Dad
-- 🎬 Video by an 11-year-old
-- 🌐 Now live on GitHub Pages:  
-  👉 [Play Blob Evolution](https://amilanov75.github.io/blob-evolution/)
+## Features
 
-What started as a playful idea quickly turned into a fully functional evolution sim. Just a few years ago, this would have been science fiction. Now? It’s a weekend project.
+- Multiple biomes (Desert, Water, Mountains, Forest)
+- Evolution system with unique traits
+- Food gathering and training mechanics
+- Inventory system
+- Dynamic evolution based on environment
+- Pet taming and training system
+- Building mechanics
+- Character progression
 
----
+## How to Play
 
-## 🎮 Blob Evolution Game
+1. Open `blob-evolution/standalone.html` in a web browser
+2. Use WASD or arrow keys to move
 
-Guide and train your blob through diverse biomes — helping it evolve, gather food, and unlock unique traits.
+### Controls
+- **Arrow Keys/WASD**: Move your character
+- **G**: Toggle collection mode (automatically collect items in range)
+- **B**: Toggle build mode (build structures)
+- **N**: While in build mode, cycle through building types
+- **N**: When a blob is tamed as a pet, name your pet
+- **I**: Toggle inventory view
+- **Click** on inventory items to select them for use
+- **R**: Restart game if your blob dies
 
-### Features
+### Biomes and Their Effects
 
-- 🌍 Multiple biomes (Desert, Water, Mountains, Forest)
-- 🔄 Evolution system with unique traits
-- 🍓 Food gathering and energy mechanics
-- 🎒 Inventory system with rarity and custom icons
-- 🌡️ Dynamic environment-based evolution
+Each biome affects your blob differently:
+- **Forest**: Balanced temperature, food includes berries and nuts
+- **Desert**: Very hot, reduces energy faster, food includes cactus
+- **Water**: Cools blob, reduces movement speed unless blob has fins, food includes fish
+- **Mountains**: Very cold, reduces movement speed unless blob has fur, food includes minerals
 
-### How to Play
+### Stats and Survival
 
-1. Visit the [live site](https://amilanov75.github.io/blob-evolution/)
-2. Use **WASD** or **arrow keys** to move
-3. Collect food items to feed your blob
-4. Explore different biomes to unlock evolutions
+Your blob's stats are interconnected and critical for survival:
 
----
+- **Hunger**: Decreases over time (6% per second). When below 45%, energy drains faster. Below 25%, health starts decreasing. Keep fed by collecting food.
 
-## ⚙️ Development
+- **Energy**: Decreases while moving (3.8 per second) and more slowly when stationary (2.2% per second when hungry). When energy falls below 20%, health starts decreasing. Completely depleted energy causes rapid health loss.
 
-- Built with **vanilla JavaScript** and **HTML5 Canvas**
-- Designed for desktop and mobile play
-- No external libraries — fully standalone
+- **Temperature**: Affected by biomes. Extreme temperatures (below 8°C or above 32°C) drain energy faster. Very extreme temperatures (below 3°C or above 37°C) cause health damage.
 
-### Testing
+- **Health**: Reaches zero when your blob dies. Naturally regenerates only under excellent conditions (high hunger, energy, and comfortable temperature).
 
-- Tested on **Windows 11** in Chrome
-- Mobile optimization included
+### Evolution System
 
----
+Your blob evolves based on:
+- Experience gained from eating food
+- Time spent in specific biomes
+- Types of food consumed
 
+Each evolution level grants new traits and abilities:
+- **Level 1 (Tamed Blob)**: Adaptation to dominant biome
+- **Level 2 (Friendly Blob)**: Adaptation based on diet preference
+- **Level 3 (Loyal Blob)**: Special abilities, significantly faster movement
+- **Level 4 (Companion Blob)**: Enhanced speed and environmental mastery
+- **Level 5 (Guardian Blob)**: Advanced abilities and maximum speed
 
+## Development
 
-## 📈 Version History
+The game is built using vanilla JavaScript and HTML5 Canvas.
 
-### v1.5.0 – Mobile Optimization
-- Optimized layout for smaller screens
-- Enhanced touch controls
-- Improved UI feedback
+### File Structure
 
-### v1.4.0 – Game Mechanics
-- Added death and restart flow
-- Resource gathering and crafting logic
-- Tooltips and inventory polish
+- `blob-evolution/` - Main game directory
+  - `standalone.html` - Complete game file
+  - `assets/` - Game assets and resources
 
-### v1.3.0 – Evolution Mechanics
-- Environment-driven evolution system
-- Trait unlocks and upgrades
-- Capacity increases based on progress
+## Backup Instructions
 
-### v1.2.0 – Biome System
-- Implemented biome-specific resources and temperature effects
-- Dynamic terrain generation
+1. Regular commits should be made after significant changes
+2. Use descriptive commit messages
+3. Push to remote repository regularly
+4. Keep local backups of the repository
 
-### v1.1.0 – Core Systems
-- Inventory management with rarity tiers
-- Item rendering with custom draw logic
+## Version History
 
-### v1.0.0 – Initial Release
-- Canvas game loop and blob controls
-- Basic movement, hunger, and rendering
+### v1.0.0 - Initial Release
+- Basic blob movement and physics system
+- Simple canvas rendering
+- Basic game loop implementation
 
----
+### v1.1.0 - Core Systems
+- Added inventory system with item management
+- Implemented item rarity system (common, uncommon, rare, epic, legendary)
+- Added custom item icons and drawing system
+- Basic UI elements and inventory display
 
-Made with imagination, pixels, and popcorn 🍿  
-Hope you enjoy playing as much as we enjoyed building it.
+### v1.2.0 - Biome System
+- Implemented biome-specific traits and effects
+- Added temperature effects for different biomes
+- Biome-specific resource distribution
+- Environmental interactions
+
+### v1.3.0 - Evolution Mechanics
+- Added evolution system based on biome interactions
+- Implemented trait development
+- Added inventory capacity upgrades through evolution
+- Biome-specific evolution paths
+
+### v1.4.0 - Game Mechanics
+- Added death and restart mechanics
+- Implemented resource gathering system
+- Added building materials system
+- Enhanced UI with item details and tooltips
+
+### v1.5.0 - Mobile Optimization
+- Optimized UI for mobile devices
+- Adjusted inventory layout for better mobile experience
+- Improved touch controls
+- Enhanced visual feedback for mobile interactions
+
+### v1.6.0 - Pet System
+- Added ability to tame blobs as pets
+- Implemented pet evolution paths
+- Added pet naming feature
+- Created loyalty and training mechanics
+
+### v1.7.0 - Building System
+- Added construction mechanics
+- Implemented resource consumption for building
+- Created multiple structure types
+- Added building progression system
+
+### v1.8.0 - Collection Mode
+- Added automatic collection mode (toggle with G key)
+- Implemented collection radius visualization
+- Added visual feedback for collected items
+- Improved resource gathering experience
+
+### v1.9.0 - Speed Enhancements
+- Adjusted blob speed progression through evolution levels
+- Implemented specific speed values for each evolution stage:
+  - Level 0 (Wild): 0.8
+  - Level 1 (Tamed): 0.95
+  - Level 2 (Friendly): 1.1
+  - Level 3 (Loyal): 1.7
+  - Level 4 (Companion): 2.1
+  - Level 5+ (Guardian): 2.5
+
+### v2.0.0 - Difficulty Balance (Current)
+- Increased hunger decay rate from 4.0% to 6.0% per second
+- Increased energy decay rate from 1.5% to 2.2% per second when not moving
+- Increased movement energy cost from 2.5 to 3.8
+- Raised health decay rate from 0.3% to 0.45% per second in bad conditions
+- Adjusted hunger and energy thresholds for health penalties
+- Enhanced temperature effects on health and energy
+- Fine-tuned overall game difficulty for better challenge 
