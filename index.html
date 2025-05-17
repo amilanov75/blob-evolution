@@ -889,7 +889,7 @@
                 // Initialize stats with default values (0-100 scale)
                 this.hunger = 100;      // 100 = full, 0 = starving
                 this.energy = 100;      // 100 = energetic, 0 = exhausted
-                this.temperature = 20;  // In Celsius: 20Â°C = neutral
+                this.temperature = 20;  // In Celsius: 20°C = neutral
                 this.mood = 75;         // 0 = sad, 100 = happy
                 this.health = 100;      // 100 = perfect health, 0 = dead
                 
@@ -979,14 +979,14 @@
                     // Increase effect of biome temperature changes (0.1 -> 0.3)
                     this.temperature += currentBiome.temperatureEffect * deltaTime * 0.3;
                     
-                    // Natural temperature regulation - slowly return to neutral (20Â°C)
+                    // Natural temperature regulation - slowly return to neutral (20°C)
                     // Only applies when temperature effect is small, otherwise biome effect dominates
                     if (Math.abs(currentBiome.temperatureEffect) < 1) {
                         const tempDiff = 20 - this.temperature;
-                        this.temperature += tempDiff * deltaTime * 0.1; // Slowly move toward 20Â°C
+                        this.temperature += tempDiff * deltaTime * 0.1; // Slowly move toward 20°C
                     }
                     
-                    // Keep temperature in reasonable range (-10Â°C to 45Â°C)
+                    // Keep temperature in reasonable range (-10°C to 45°C)
                     this.temperature = Math.max(-10, Math.min(45, this.temperature));
                     
                     // Track biome exposure time
@@ -1045,7 +1045,7 @@
             updateMood() {
                 // Mood is affected by all stats
                 // Formula: weighted average of hunger, energy, temperature comfort, and health
-                const tempComfort = 1 - Math.abs(this.temperature - 20) / 30; // 1 at 20Â°C, 0 at extremes
+                const tempComfort = 1 - Math.abs(this.temperature - 20) / 30; // 1 at 20°C, 0 at extremes
                 
                 this.mood = (
                     0.3 * (this.hunger / 100) + 
@@ -2620,9 +2620,9 @@
                 ctx.fillStyle = this.getTemperatureColor(temperature);
                 ctx.fillRect(x + 70, y - 12, barValue, 15);
                 
-                // Draw value text with Â°C
+                // Draw value text with °C
                 ctx.fillStyle = 'white';
-                ctx.fillText(`${Math.round(temperature)}Â°C`, x + this.barWidth + 75, y);
+                ctx.fillText(`${Math.round(temperature)}°C`, x + this.barWidth + 75, y);
             }
             
             drawExperienceBar(ctx, stats, x, y) {
