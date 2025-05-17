@@ -17,7 +17,7 @@
         
         #gameCanvas {
             background: #fff;
-            width: 1280px;
+            width: 480px;
             height: 720px;
         }
     </style>
@@ -36,7 +36,7 @@
             }
 
             setCanvasSize() {
-                this.canvas.width = 1280;
+                this.canvas.width = 480;
                 this.canvas.height = 720;
             }
 
@@ -121,17 +121,41 @@
             
             removeItem(itemName, quantity) {
                 if (quantity === undefined) quantity = 1;
-                if (this.items[itemName]) {
-                    this.items[itemName].quantity -= quantity;
-                    if (this.items[itemName].quantity <= 0) {
-                        delete this.items[itemName];
-                        if (this.selectedItem === itemName) {
-                            this.selectedItem = null;
-                        }
-                    }
-                    return true;
+                
+                console.log(`Attempting to remove ${quantity} of ${itemName} from inventory`);
+                
+                if (!itemName) {
+                    console.error('Invalid item name provided to removeItem');
+                    return false;
                 }
-                return false;
+                
+                if (!this.items[itemName]) {
+                    console.error(`Item "${itemName}" not found in inventory`);
+                    return false;
+                }
+                
+                if (this.items[itemName].quantity < quantity) {
+                    console.error(`Not enough ${itemName} in inventory. Have ${this.items[itemName].quantity}, need ${quantity}`);
+                    return false;
+                }
+                
+                // All checks passed, now remove the item
+                this.items[itemName].quantity -= quantity;
+                console.log(`Removed ${quantity} ${itemName}, new quantity: ${this.items[itemName].quantity}`);
+                
+                // If quantity is now zero, remove the item from inventory
+                if (this.items[itemName].quantity <= 0) {
+                    console.log(`${itemName} quantity is now 0, removing from inventory`);
+                    delete this.items[itemName];
+                    
+                    // If this was the selected item, deselect it
+                    if (this.selectedItem === itemName) {
+                        console.log(`Deselecting ${itemName} as it was removed from inventory`);
+                        this.selectedItem = null;
+                    }
+                }
+                
+                return true;
             }
             
             // Get all building materials
@@ -155,11 +179,21 @@
                 const itemSize = 40;
                 const padding = 10;
                 const bottomPadding = 20;
-                const itemsPerRow = 6;
+                const itemsPerRow = 3; // Changed from 6 to 3 for mobile format
+                
+                // Make sure all items have proper quantity values
+                for (const name in this.items) {
+                    if (this.items[name] && typeof this.items[name].quantity !== 'number') {
+                        this.items[name].quantity = 1;
+                    }
+                }
                 
                 let itemIndex = 0;
                 for (const name in this.items) {
                     const item = this.items[name];
+                    
+                    // Skip invalid items
+                    if (!item) continue;
                     
                     const row = Math.floor(itemIndex / itemsPerRow);
                     const col = itemIndex % itemsPerRow;
@@ -216,7 +250,7 @@
                         
                         ctx.fillStyle = '#FFFFFF';
                         ctx.font = '14px Arial';
-                        ctx.fillText(item.name + ' (' + item.rarity + ')', x + 5, detailsY + 20);
+                        ctx.fillText(item.name.charAt(0).toUpperCase() + item.name.slice(1) + ' (' + item.rarity + ')', x + 5, detailsY + 20);
                         ctx.font = '12px Arial';
                         ctx.fillText(item.description, x + 5, detailsY + 40);
                     }
@@ -230,9 +264,11 @@
                 const itemSize = 40;
                 const padding = 10;
                 const bottomPadding = 20;
-                const itemsPerRow = 6;
+                const itemsPerRow = 3; // Changed from 6 to 3 for mobile format
                 
                 let itemIndex = 0;
+                let previousSelectedItem = this.selectedItem;
+                
                 for (const name in this.items) {
                     const row = Math.floor(itemIndex / itemsPerRow);
                     const col = itemIndex % itemsPerRow;
@@ -246,6 +282,15 @@
                         // Toggle selection
                         this.selectedItem = this.selectedItem === name ? null : name;
                         console.log('Selected item:', this.selectedItem);
+                        
+                        // Trigger a custom event to update activeFood in the Person class
+                        const event = new CustomEvent('inventorySelectionChanged', {
+                            detail: {
+                                selectedItem: this.selectedItem,
+                                previousSelectedItem: previousSelectedItem
+                            }
+                        });
+                        window.dispatchEvent(event);
                         return;
                     }
                     
@@ -254,6 +299,13 @@
                 
                 // If click wasn't on any item, deselect
                 this.selectedItem = null;
+                const event = new CustomEvent('inventorySelectionChanged', {
+                    detail: {
+                        selectedItem: null,
+                        previousSelectedItem: previousSelectedItem
+                    }
+                });
+                window.dispatchEvent(event);
             }
         }
 
@@ -263,7 +315,7 @@
                 this.x = x;
                 this.y = y;
                 this.type = type; // e.g., 'berries', 'fish', 'kibble', 'steak', etc.
-                this.radius = 8; // Size of the food item
+                this.radius = 9; // Reduced from 10 to 9 to match smaller biomes
                 this.nutrientValue = nutrientValue; // How much hunger it restores
                 this.energyValue = energyValue; // How much energy it provides
                 this.color = this.getFoodColor(type);
@@ -384,18 +436,26 @@
                     ctx.stroke();
                 };
 
+                // Store the drawing function for this food type to use in draw()
+                this.drawFoodIcon = null;
+                
                 const item = (() => {
                     switch(type) {
                         case 'berries':
-                            return new InventoryItem('resource', 'Berries', 'Sweet and nutritious', 'common', drawBerries);
+                            this.drawFoodIcon = drawBerries;
+                            return new InventoryItem('resource', type, 'Sweet and nutritious', 'common', drawBerries);
                         case 'nuts':
-                            return new InventoryItem('resource', 'Nuts', 'Crunchy and filling', 'common', drawNuts);
+                            this.drawFoodIcon = drawNuts;
+                            return new InventoryItem('resource', type, 'Crunchy and filling', 'common', drawNuts);
                         case 'cactus':
-                            return new InventoryItem('resource', 'Cactus', 'Spiky but hydrating', 'common', drawCactus);
+                            this.drawFoodIcon = drawCactus;
+                            return new InventoryItem('resource', type, 'Spiky but hydrating', 'common', drawCactus);
                         case 'fish':
-                            return new InventoryItem('resource', 'Fish', 'Fresh and healthy', 'uncommon', drawFish);
+                            this.drawFoodIcon = drawFish;
+                            return new InventoryItem('resource', type, 'Fresh and healthy', 'uncommon', drawFish);
                         case 'minerals':
-                            return new InventoryItem('resource', 'Minerals', 'Essential nutrients', 'common', drawMinerals);
+                            this.drawFoodIcon = drawMinerals;
+                            return new InventoryItem('resource', type, 'Essential nutrients', 'common', drawMinerals);
                         default:
                             return null;
                     }
@@ -413,23 +473,38 @@
                 const screenY = this.y - cameraY;
                 
                 // Only draw if on screen
-                const buffer = this.radius * 2;
+                const buffer = this.radius * 3; // Buffer for larger icons
                 if (screenX + buffer < 0 || screenX - buffer > ctx.canvas.width || 
                     screenY + buffer < 0 || screenY - buffer > ctx.canvas.height) {
                     return;
                 }
                 
-                // Draw food item
-                ctx.beginPath();
-                ctx.arc(screenX, screenY, this.radius, 0, Math.PI * 2);
-                ctx.fillStyle = this.color;
-                ctx.fill();
-                
-                // Add a little shine/highlight
-                ctx.beginPath();
-                ctx.arc(screenX - this.radius/3, screenY - this.radius/3, this.radius/3, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-                ctx.fill();
+                // Draw food item using the detailed icon if available
+                if (this.drawFoodIcon) {
+                    // Use moderate icon size that's still clearly visible
+                    // Reduced from 3.4 to 3.0 for slightly smaller icons
+                    const iconSize = this.radius * 3.0;
+                    this.drawFoodIcon(ctx, screenX - iconSize/2, screenY - iconSize/2, iconSize);
+                    
+                    // Draw outline for better visibility
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.arc(screenX, screenY, this.radius * 1.1, 0, Math.PI * 2);
+                    ctx.stroke();
+                } else {
+                    // Fallback to simple colored circle if no icon
+                    ctx.beginPath();
+                    ctx.arc(screenX, screenY, this.radius, 0, Math.PI * 2);
+                    ctx.fillStyle = this.color;
+                    ctx.fill();
+                    
+                    // Add a little shine/highlight
+                    ctx.beginPath();
+                    ctx.arc(screenX - this.radius/3, screenY - this.radius/3, this.radius/3, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                    ctx.fill();
+                }
             }
             
             // Check if the blob is collecting/eating this food
@@ -447,9 +522,9 @@
                 this.worldWidth = worldWidth;
                 this.worldHeight = worldHeight;
                 this.foods = [];
-                this.maxFoods = 50; // Maximum number of food items at once
+                this.maxFoods = 100; // Maximum number of food items at once (doubled from 50)
                 this.spawnTimer = 0;
-                this.spawnInterval = 1000; // Time in ms between spawn attempts
+                this.spawnInterval = 500; // Time in ms between spawn attempts (halved from 1000)
                 this.lastSpawnTime = Date.now();
             }
             
@@ -464,7 +539,10 @@
                 // Attempt to spawn new food if timer exceeds interval
                 if (this.spawnTimer >= this.spawnInterval) {
                     this.spawnTimer = 0;
-                    this.trySpawnFood(biomeManager);
+                    // Try spawning multiple food items each update
+                    for (let i = 0; i < 2; i++) {
+                        this.trySpawnFood(biomeManager);
+                    }
                 }
             }
             
@@ -547,8 +625,48 @@
                     if (isColliding || isInCollectionRange) {
                         foodEaten = true;
                         
+                        // If this is from collection mode, show a visual hint
+                        if (isInCollectionRange && !isColliding) {
+                            // Draw a more dramatic animation for collection
+                            const ctx = document.getElementById('gameCanvas').getContext('2d');
+                            if (ctx) {
+                                const screenX = blob.x - window.gameInstance.world.cameraX;
+                                const screenY = blob.y - window.gameInstance.world.cameraY;
+                                const foodScreenX = food.x - window.gameInstance.world.cameraX;
+                                const foodScreenY = food.y - window.gameInstance.world.cameraY;
+                                
+                                // Draw animated line connecting blob to food
+                                ctx.beginPath();
+                                ctx.moveTo(screenX, screenY);
+                                ctx.lineTo(foodScreenX, foodScreenY);
+                                ctx.strokeStyle = 'rgba(0, 255, 0, 0.8)'; // Brighter green
+                                ctx.lineWidth = 4; // Thicker line
+                                ctx.stroke();
+                                
+                                // Add particles effect moving from food to blob
+                                const particleCount = 10;
+                                for (let i = 0; i < particleCount; i++) {
+                                    const t = i / particleCount;
+                                    const particleX = foodScreenX + (screenX - foodScreenX) * t;
+                                    const particleY = foodScreenY + (screenY - foodScreenY) * t;
+                                    const size = 5 + Math.sin(Date.now() / 100 + i) * 3;
+                                    
+                                    ctx.beginPath();
+                                    ctx.arc(particleX, particleY, size, 0, Math.PI * 2);
+                                    ctx.fillStyle = `rgba(0, 255, ${Math.floor(i * 25)}, 0.8)`;
+                                    ctx.fill();
+                                }
+                                
+                                // Add glow around the food
+                                ctx.beginPath();
+                                ctx.arc(foodScreenX, foodScreenY, 15, 0, Math.PI * 2);
+                                ctx.fillStyle = 'rgba(255, 255, 0, 0.5)';
+                                ctx.fill();
+                            }
+                        }
+                        
                         // Apply the food effects to the blob
-                        blob.stats.feed(food.nutrientValue, food.type);
+                        const hungerRestored = blob.stats.feed(food.nutrientValue, food.type);
                         blob.stats.rest(food.energyValue);
                         
                         // Some foods also heal the blob
@@ -556,45 +674,32 @@
                             blob.stats.heal(5); // Fish and berries are healing
                         }
                         
-                        // Add to inventory if applicable
+                        // The blob eats the food and shouldn't store it in inventory
+                        // Only the dog/person can store items in inventory
                         let inventoryMessage = "";
-                        if (food.inventoryItem) {
-                            // Create a new instance of the inventory item
-                            const newItem = new InventoryItem(
-                                food.inventoryItem.type,
-                                food.inventoryItem.name,
-                                food.inventoryItem.description,
-                                food.inventoryItem.rarity,
-                                food.inventoryItem.drawIcon  // Pass the drawing function
-                            );
-                            newItem.quantity = 1; // Ensure quantity is set to 1
-                            
-                            if (blob.inventory.addItem(newItem)) {
-                                inventoryMessage = `, +1 ${newItem.name}`;
-                            } else {
-                                inventoryMessage = " (Inventory full!)";
-                            }
-                        }
                         
                         // Mark as collected
                         food.collected = true;
                         
+                        // Gain experience directly based on food's nutrient value
+                        const didEvolve = blob.stats.gainExperienceFromFood(food.nutrientValue, food.type);
+                        
                         // Show a small popup message with all effects
-                        let message = `+${food.nutrientValue} hunger, +${food.energyValue} energy${inventoryMessage}`;
+                        let message = `+${hungerRestored} hunger, +${food.energyValue} energy`;
                         if (food.type === 'fish' || food.type === 'berries') {
                             message += ', +5 health';
                         }
+                        message += `, +${food.nutrientValue} XP`;
+                        
+                        // Add collection mode indicator if collected through collection mode
+                        if (isInCollectionRange && !isColliding) {
+                            message += " (Collection mode)";
+                        }
+                        
                         blob.showMessage(message);
                         
-                        // Check if we should evolve based on single food item
-                        // Always evolve - no max level limit
-                        if (blob.stats.checkFoodEvolution()) {
-                            blob.showMessage("Instant Evolution: Food eaten!", 3000);
-                            const evolutionDetails = blob.stats.getEvolutionDetails();
-                            blob.evolve(evolutionDetails);
-                        }
-                        // Also check regular evolution (based on experience thresholds)
-                        else if (blob.checkEvolution()) {
+                        // Check evolution based on normal XP thresholds
+                        if (didEvolve || blob.checkEvolution()) {
                             const evolutionDetails = blob.stats.getEvolutionDetails();
                             blob.evolve(evolutionDetails);
                         }
@@ -619,13 +724,13 @@
             constructor(width, height, tileSize) {
                 this.width = width;
                 this.height = height;
-                this.tileSize = tileSize;
+                this.tileSize = 36; // Increased from 30 to 36 (20% larger)
                 this.grid = [];
                 this.biomeTypes = {
-                    FOREST: new Biome('Forest', '#228B22', 0, ['berries', 'nuts']),
-                    DESERT: new Biome('Desert', '#F4A460', 2, ['cactus']),
-                    WATER: new Biome('Water', '#1E90FF', -1, ['fish']),
-                    MOUNTAINS: new Biome('Mountains', '#808080', -2, ['minerals'])
+                    FOREST: new Biome('Forest', '#228B22', 0.5, ['berries', 'nuts']),     // Slight warming effect
+                    DESERT: new Biome('Desert', '#F4A460', 3, ['cactus']),                // Stronger heating effect
+                    WATER: new Biome('Water', '#1E90FF', -2, ['fish']),                   // Stronger cooling effect
+                    MOUNTAINS: new Biome('Mountains', '#808080', -3, ['minerals'])         // Even stronger cooling effect
                 };
                 
                 // Make the world much larger than the screen
@@ -784,19 +889,32 @@
                 // Initialize stats with default values (0-100 scale)
                 this.hunger = 100;      // 100 = full, 0 = starving
                 this.energy = 100;      // 100 = energetic, 0 = exhausted
-                this.temperature = 20;  // In Celsius: 20°C = neutral (changed from percentage scale)
+                this.temperature = 20;  // In Celsius: 20°C = neutral
                 this.mood = 75;         // 0 = sad, 100 = happy
                 this.health = 100;      // 100 = perfect health, 0 = dead
+                
+                // Decay rates (amount lost per second)
+                this.hungerDecayRate = 6.0;    // Increased from 5.5 - loses 6% hunger per second
+                this.energyDecayRate = 2.2;    // Increased from 2.0 - loses 2.2% energy per second when not moving
+                this.healthDecayRate = 0.45;   // Increased from 0.4 - loses 0.45% health per second when conditions are bad
                 
                 // Evolution stats
                 this.experience = 0;    // Experience points earned
                 this.evolutionLevel = 0; // Current evolution level
-                // Generate an unlimited number of evolve thresholds
+                // Generate more reasonable experience thresholds - average food gives ~15 XP
+                // So 150 XP = ~10 food items
                 this.experienceThresholds = [];
-                for (let i = 0; i < 100; i++) {
-                    // Start with small thresholds, but they grow exponentially
-                    this.experienceThresholds.push(Math.round(100 * Math.pow(1.5, i)));
+                this.experienceThresholds.push(150);  // Level 1: ~10 food items
+                this.experienceThresholds.push(300);  // Level 2: ~10 more food items
+                this.experienceThresholds.push(450);  // Level 3: ~10 more food items
+                this.experienceThresholds.push(600);  // Level 4: ~10 more food items
+                this.experienceThresholds.push(750);  // Level 5: ~10 more food items
+                
+                // For levels beyond 5, increase by 150 each time (10 more items per level)
+                for (let i = 5; i < 100; i++) {
+                    this.experienceThresholds.push(750 + (i - 4) * 150);
                 }
+                
                 this.foodCounter = 0;   // Counter for food items eaten
                 
                 // Biome exposure tracking
@@ -815,11 +933,6 @@
                     fish: 0,
                     minerals: 0
                 };
-                
-                // Decay rates (amount lost per second)
-                this.hungerDecayRate = 0.5;
-                this.energyDecayRate = 0.1;  // Reduced base decay rate for energy
-                this.healthDecayRate = 0.05; // Health slowly decays when other stats are low
                 
                 // Last update time for calculating delta time
                 this.lastUpdate = Date.now();
@@ -843,29 +956,36 @@
                 // Update hunger (always decreases over time)
                 this.hunger = Math.max(0, this.hunger - this.hungerDecayRate * deltaTime);
                 
-                // Energy regeneration/decay mechanics
+                // Energy mechanics
                 if (isMoving) {
                     // Energy decreases faster when moving
-                    let movementEnergyCost = 0.3;
+                    let movementEnergyCost = 3.8; // Increased from 3.5 - moving costs slightly more energy
                     
-                    // Biome-specific energy costs can be adjusted by blob traits in the Blob class
-                    
+                    // Biome-specific energy costs can be adjusted by blob traits
                     this.energy = Math.max(0, this.energy - movementEnergyCost * deltaTime);
                 } else {
-                    // Energy regenerates when not moving, but only if hunger is above 40%
-                    if (this.hunger > 40) {
-                        this.energy = Math.min(100, this.energy + 0.2 * deltaTime * (this.hunger / 100));
+                    // Energy regenerates when not moving, but only if hunger is above 60%
+                    if (this.hunger > 60) {
+                        // Reduced regeneration rate
+                        this.energy = Math.min(100, this.energy + 0.1 * deltaTime * (this.hunger / 100));
                     } else {
-                        // Energy still decays when hunger is low, even when not moving
-                        this.energy = Math.max(0, this.energy - this.energyDecayRate * deltaTime);
+                        // Energy decays faster when hunger is low, even when not moving
+                        this.energy = Math.max(0, this.energy - this.energyDecayRate * 1.2 * deltaTime);
                     }
                 }
                 
                 // Apply biome effects on temperature (in Celsius)
                 if (currentBiome) {
-                    // Convert biome temperature effect to Celsius scale
-                    // Desert: +2°C, Water: -1°C, Mountains: -2°C
-                    this.temperature += currentBiome.temperatureEffect * deltaTime * 0.1;
+                    // Increase effect of biome temperature changes (0.1 -> 0.3)
+                    this.temperature += currentBiome.temperatureEffect * deltaTime * 0.3;
+                    
+                    // Natural temperature regulation - slowly return to neutral (20°C)
+                    // Only applies when temperature effect is small, otherwise biome effect dominates
+                    if (Math.abs(currentBiome.temperatureEffect) < 1) {
+                        const tempDiff = 20 - this.temperature;
+                        this.temperature += tempDiff * deltaTime * 0.1; // Slowly move toward 20°C
+                    }
+                    
                     // Keep temperature in reasonable range (-10°C to 45°C)
                     this.temperature = Math.max(-10, Math.min(45, this.temperature));
                     
@@ -877,33 +997,39 @@
                 }
                 
                 // If hunger is low, energy decreases faster and health begins to drop
-                if (this.hunger < 30) {
-                    this.energy = Math.max(0, this.energy - 0.3 * deltaTime);
+                if (this.hunger < 45) { // Increased from 40 to 45 - even more challenging hunger threshold
+                    this.energy = Math.max(0, this.energy - 2.5 * deltaTime); // Increased from 2.0 to 2.5 - even faster energy drain
                     
                     // Health decreases when hunger is critically low (starvation)
-                    if (this.hunger < 15) {
-                        this.health = Math.max(0, this.health - 0.2 * deltaTime);
+                    if (this.hunger < 25) { // Increased from 20 to 25
+                        this.health = Math.max(0, this.health - 1.0 * deltaTime); // Increased from 0.8 to 1.0 for faster health loss
                     }
                 }
                 
-                // If energy is completely depleted, health decreases (exhaustion)
-                if (this.energy <= 0) {
-                    this.health = Math.max(0, this.health - 0.15 * deltaTime);
+                // If energy is low or completely depleted, health decreases (exhaustion)
+                if (this.energy <= 20) { // Increased threshold from 15% to 20% energy
+                    const healthLoss = this.energy <= 0 ? 1.5 : 0.7; // Increased from 1.0/0.5 to 1.5/0.7
+                    this.health = Math.max(0, this.health - healthLoss * deltaTime);
                 }
                 
                 // If temperature is extreme, energy decreases faster and health can drop
-                if (this.temperature < 5 || this.temperature > 35) {
-                    this.energy = Math.max(0, this.energy - 0.3 * deltaTime);
+                if (this.temperature < 8 || this.temperature > 32) { // Narrower comfortable temperature range
+                    this.energy = Math.max(0, this.energy - 0.8 * deltaTime); // More energy drain in uncomfortable temps
                     
-                    // Severe temperature causes health damage
+                    // Temperature causes health damage at less extreme values
+                    if (this.temperature < 3 || this.temperature > 37) {
+                        this.health = Math.max(0, this.health - 0.3 * deltaTime); // Tripled from 0.1
+                    }
+                    
+                    // Severe temperature causes more severe health damage
                     if (this.temperature < 0 || this.temperature > 40) {
-                        this.health = Math.max(0, this.health - 0.1 * deltaTime);
+                        this.health = Math.max(0, this.health - 0.6 * deltaTime); // Six times original value
                     }
                 }
                 
-                // Natural health regeneration when conditions are good
-                if (this.hunger > 70 && this.energy > 70 && this.temperature >= 10 && this.temperature <= 30) {
-                    this.health = Math.min(100, this.health + 0.05 * deltaTime);
+                // Natural health regeneration only when ALL conditions are excellent
+                if (this.hunger > 85 && this.energy > 85 && this.temperature >= 15 && this.temperature <= 25) {
+                    this.health = Math.min(100, this.health + 0.02 * deltaTime); // Reduced regen rate
                 }
                 
                 // Update mood based on other stats
@@ -931,7 +1057,9 @@
             
             // Methods to modify stats
             feed(amount, foodType) {
-                this.hunger = Math.min(100, this.hunger + amount);
+                // Increase hunger when eating - multiply amount by 2 (reduced from 3)
+                const amplifiedAmount = amount * 2;
+                this.hunger = Math.min(100, this.hunger + amplifiedAmount);
                 
                 // Increment food counter for evolution check
                 this.foodCounter++;
@@ -940,9 +1068,12 @@
                 if (foodType && this.foodConsumed.hasOwnProperty(foodType)) {
                     this.foodConsumed[foodType]++;
                     
-                    // Gain significantly more experience when eating food (5x more)
-                    this.gainExperience(amount * 1.0); // Increased from 0.2 to 1.0
+                    // Gain experience when eating food
+                    this.gainExperience(amount * 0.8); // Reduced from 1.0 to slow evolution
                 }
+                
+                // Return how much hunger was restored
+                return amplifiedAmount;
             }
             
             rest(amount) {
@@ -1026,35 +1157,33 @@
                 return Math.min(100, (currentLevelExperience / levelExperience) * 100);
             }
 
-            // Update the checkFoodEvolution method for unlimited evolution
+            // Method to add XP from food
+            gainExperienceFromFood(nutrientValue, foodType) {
+                // Grant XP equal to the food's nutrient value
+                // Berries: 15 XP, Nuts: 20 XP, Cactus: 10 XP, Fish: 25 XP, Minerals: 5 XP
+                this.experience += nutrientValue;
+                this.foodCounter++;
+                return this.checkEvolution(); // Return true if evolution happens
+            }
+            
+            // Update the checkFoodEvolution method to remove instant evolution
             checkFoodEvolution() {
-                // Evolve immediately after eating any food item
-                if (this.foodCounter > 0) {
-                    this.foodCounter = 0; // Reset counter
-                    
-                    // Calculate how much XP is needed to reach next level
-                    const currentThreshold = this.evolutionLevel > 0 
-                        ? this.experienceThresholds[this.evolutionLevel - 1] 
-                        : 0;
-                    const nextThreshold = this.experienceThresholds[this.evolutionLevel];
-                    const neededXP = nextThreshold - this.experience;
-                    
-                    // Add the needed XP plus a little extra
-                    this.experience += neededXP + 10;
-                    
-                    return true;
-                }
-                return false;
+                // Simply increment counters but don't automatically evolve
+                // Evolution is now handled through normal XP gain
+                return false; // No longer triggers instant evolution
             }
         }
 
         // Blob class
         class Blob {
-            constructor(x, y) {
+            constructor(x, y, world) {  // Add world parameter
                 this.x = x;
                 this.y = y;
-                this.radius = 20;
-                this.color = '#808080'; // Grey color
+                this.world = world;     // Store world reference
+                this.radius = 18;       // Increased by 20% from 15 to 18
+                this.color = '#4A148C'; // Changed to match the core color (deep purple)
+                this.glowColor = '#4A148C'; // Changed to match the core color (deep purple)
+                this.coreColor = '#4A148C'; // Deep purple core
                 this.speed = 0.8; // Slightly faster base speed, but still much slower than player (speed 4)
                 this.keys = {
                     ArrowUp: false,
@@ -1062,6 +1191,12 @@
                     ArrowLeft: false,
                     ArrowRight: false
                 };
+
+                // Animation properties
+                this.pulseTime = 0;
+                this.pulseFactor = 1;
+                this.rotationAngle = 0;
+                this.lastUpdateTime = Date.now();
 
                 // Add stats to the blob
                 this.stats = new Stats();
@@ -1090,7 +1225,7 @@
                 
                 // Add collection mode
                 this.collectionMode = false;
-                this.collectionRadius = 50; // Collection range when in collection mode
+                this.collectionRadius = 120; // Dramatically increased from 40 to 120
                 
                 // Building mode properties
                 this.isBuildMode = false;
@@ -1122,45 +1257,73 @@
                     
                     // Handle inventory click
                     if (this.inventory.visible) {
-                        this.inventory.handleClick(canvasX, canvasY, this.canvas.width, this.canvas.height);
-                        // Update active food based on selected item
-                        const selectedItem = this.inventory.items[this.inventory.selectedItem];
-                        console.log('Selected item for feeding:', selectedItem);
+                        // Always use document.getElementById to get the canvas
+                        const canvas = document.getElementById('gameCanvas');
+                        this.inventory.handleClick(canvasX, canvasY, canvas.width, canvas.height);
+                        // activeFood is now updated via the inventorySelectionChanged event
+                    }
+                });
+                
+                // Listen for inventory selection changes
+                window.addEventListener('inventorySelectionChanged', (e) => {
+                    console.log('Inventory selection changed:', e.detail);
+                    // Update active food based on selected item
+                    const selectedItem = this.inventory.selectedItem ? 
+                                        this.inventory.items[this.inventory.selectedItem] : null;
+                    
+                    if (selectedItem && selectedItem.type === 'resource') {
+                        this.activeFood = {
+                            type: selectedItem.name,
+                            nutrientValue: 10,
+                            energyValue: 5
+                        };
                         
-                        if (selectedItem && selectedItem.type === 'resource') {
-                            this.activeFood = {
-                                type: selectedItem.name,
-                                nutrientValue: 10,
-                                energyValue: 5
-                            };
-                            
-                            // Update food circle color based on food type
-                            switch(selectedItem.name.toLowerCase()) {
-                                case 'berries': this.foodCircle.color = '#CC0066'; break;
-                                case 'nuts': this.foodCircle.color = '#8B4513'; break;
-                                case 'cactus': this.foodCircle.color = '#7FFF00'; break;
-                                case 'fish': this.foodCircle.color = '#4682B4'; break;
-                                case 'minerals': this.foodCircle.color = '#B8B8B8'; break;
-                                default: this.foodCircle.color = '#FFFFFF';
-                            }
-                            console.log('Updated active food:', this.activeFood);
-                            this.showMessage(`Selected ${selectedItem.name} for feeding`);
-                        } else {
-                            this.activeFood = null;
-                            console.log('No valid food item selected');
+                        // Update food circle color based on food type
+                        switch(selectedItem.name.toLowerCase()) {
+                            case 'berries': this.foodCircle.color = '#CC0066'; break;
+                            case 'nuts': this.foodCircle.color = '#8B4513'; break;
+                            case 'cactus': this.foodCircle.color = '#7FFF00'; break;
+                            case 'fish': this.foodCircle.color = '#4682B4'; break;
+                            case 'minerals': this.foodCircle.color = '#B8B8B8'; break;
+                            default: this.foodCircle.color = '#FFFFFF';
+                        }
+                        console.log('Updated active food:', this.activeFood);
+                        this.showMessage(`Selected ${selectedItem.name} for feeding`);
+                    } else {
+                        // Clear active food if no valid item is selected
+                        this.activeFood = null;
+                        console.log('No valid food item selected');
+                        if (this.isFeeding) {
+                            this.isFeeding = false;
+                            this.showMessage('Feeding stopped');
                         }
                     }
                 });
             }
             
-            showMessage(text) {
-                // Add a new message with a timeout
+            showMessage(text, duration = 1500) {
+                // Initialize messages array if it doesn't exist
+                if (!this.messages) {
+                    this.messages = [];
+                }
+                
+                // Limit the number of messages to prevent buildup
+                if (this.messages.length >= 5) {
+                    // Remove oldest message if we have too many
+                    this.messages.shift();
+                }
+                
+                // Filter out any duplicate messages with the same text
+                this.messages = this.messages.filter(msg => msg.text !== text);
+                
+                // Add a new message with the specified duration
                 this.messages.push({
                     text: text,
                     x: this.x,
-                    y: this.y - this.radius - 20, // Position above the blob
+                    y: this.y - 20, // Position above the person
                     alpha: 1.0, // Full opacity
-                    duration: 1500 // Duration in milliseconds
+                    duration: duration, // Duration in milliseconds
+                    startTime: Date.now() // Add start time immediately
                 });
             }
 
@@ -1168,12 +1331,6 @@
                 window.addEventListener('keydown', (e) => {
                     if (this.keys.hasOwnProperty(e.key)) {
                         this.keys[e.key] = true;
-                    }
-                    
-                    // Toggle collection mode with G key
-                    if (e.code === 'KeyG') {
-                        this.collectionMode = !this.collectionMode;
-                        this.showMessage(this.collectionMode ? "Collection mode ON" : "Collection mode OFF");
                     }
                     
                     // Toggle build mode with B key
@@ -1205,139 +1362,207 @@
             }
 
             update(worldWidth, worldHeight, biomeManager) {
-                // Get current biome
-                this.currentBiome = biomeManager.getBiomeAt(this.x, this.y);
-                
-                // Determine if the blob is moving this frame
-                const isMoving = this.keys.ArrowUp || this.keys.ArrowDown || 
-                                this.keys.ArrowLeft || this.keys.ArrowRight;
-                
-                // Update stats with current biome and movement state
-                const healthStatus = this.stats.update(this.currentBiome, isMoving);
-                
-                // Check if blob is dead (health reaches 0)
-                if (healthStatus <= 0) {
-                    this.handleDeath();
-                    return;
-                }
-                
-                // Slow down when energy is low
-                let energyFactor = Math.max(0.5, this.stats.energy / 100);
-                
-                // Biome-specific factors
-                let biomeFactor = 1;
-                if (this.currentBiome) {
-                    // Water movement
-                    if (this.currentBiome.type === 'Water') {
-                        biomeFactor = this.traits.fins ? 1.2 : 0.6; // Faster with fins, slower without
+                try {
+                    // Get current biome if biomeManager is available
+                    if (biomeManager) {
+                        this.currentBiome = biomeManager.getBiomeAt(this.x, this.y);
+                    } else if (this.world && this.world.biomeManager) {
+                        this.currentBiome = this.world.biomeManager.getBiomeAt(this.x, this.y);
                     }
-                    // Desert movement
-                    else if (this.currentBiome.type === 'Desert') {
-                        biomeFactor = this.traits.spikes ? 1.1 : 0.8; // Faster with spikes
+
+                    // Use default biome if none found
+                    if (!this.currentBiome) {
+                        this.currentBiome = { type: 'Forest', color: '#228B22', temperatureEffect: 0.5 };
                     }
-                    // Mountain movement - affected by temperature
-                    else if (this.currentBiome.type === 'Mountains') {
-                        if (this.stats.temperature < 5) {
-                            biomeFactor = this.traits.furCoat ? 0.9 : 0.7; // Less slowdown with fur
+                    
+                    // Determine if the blob is moving this frame
+                    const isMoving = this.keys.ArrowUp || this.keys.ArrowDown || 
+                                    this.keys.ArrowLeft || this.keys.ArrowRight;
+                    
+                    // Update stats with current biome and movement state
+                    const healthStatus = this.stats.update(this.currentBiome, isMoving);
+                    
+                    // Check if blob is dead (health reaches 0)
+                    if (healthStatus <= 0) {
+                        this.handleDeath();
+                        return;
+                    }
+                    
+                    // Slow down when energy is low
+                    let energyFactor = Math.max(0.5, this.stats.energy / 100);
+                    
+                    // Biome-specific factors
+                    let biomeFactor = 1;
+                    if (this.currentBiome) {
+                        // Water movement
+                        if (this.currentBiome.type === 'Water') {
+                            biomeFactor = this.traits.fins ? 1.2 : 0.6; // Restored from 0.8 back to 0.6 for more slowdown
+                        }
+                        // Desert movement
+                        else if (this.currentBiome.type === 'Desert') {
+                            biomeFactor = this.traits.spikes ? 1.1 : 0.8; // Faster with spikes
+                        }
+                        // Mountain movement - affected by temperature
+                        else if (this.currentBiome.type === 'Mountains') {
+                            if (this.stats.temperature < 5) {
+                                biomeFactor = this.traits.furCoat ? 0.9 : 0.7; // Less slowdown with fur
+                            }
                         }
                     }
-                }
-                
-                // Health affects movement too - when health is low, movement gets harder
-                const healthFactor = this.stats.health > 30 ? 1 : this.stats.health / 30;
-                
-                const currentSpeed = this.speed * energyFactor * biomeFactor * healthFactor;
-                
-                // Movement
-                if (this.keys.ArrowUp) this.y -= currentSpeed;
-                if (this.keys.ArrowDown) this.y += currentSpeed;
-                if (this.keys.ArrowLeft) this.x -= currentSpeed;
-                if (this.keys.ArrowRight) this.x += currentSpeed;
+                    
+                    // Health affects movement too - when health is low, movement gets harder
+                    const healthFactor = this.stats.health > 30 ? 1 : this.stats.health / 30;
+                    
+                    const currentSpeed = this.speed * energyFactor * biomeFactor * healthFactor;
+                    
+                    // Movement
+                    if (this.keys.ArrowUp) this.y -= currentSpeed;
+                    if (this.keys.ArrowDown) this.y += currentSpeed;
+                    if (this.keys.ArrowLeft) this.x -= currentSpeed;
+                    if (this.keys.ArrowRight) this.x += currentSpeed;
 
-                // World wrap-around (sphere-like)
-                if (this.x < 0) this.x = worldWidth;
-                if (this.x > worldWidth) this.x = 0;
-                if (this.y < 0) this.y = worldHeight;
-                if (this.y > worldHeight) this.y = 0;
-                
-                // Gradually adapt blob color to biome
-                if (this.currentBiome) {
-                    this.adaptToBiome();
+                    // World wrap-around (sphere-like)
+                    if (this.x < 0) this.x = worldWidth;
+                    if (this.x > worldWidth) this.x = 0;
+                    if (this.y < 0) this.y = worldHeight;
+                    if (this.y > worldHeight) this.y = 0;
+                    
+                    // Gradually adapt blob color to biome
+                    if (this.currentBiome) {
+                        this.adaptToBiome();
+                    }
+                    
+                    // Update messages
+                    this.updateMessages();
+                    
+                    // Show a debug message about current XP if it's close to evolving
+                    const nextThreshold = this.stats.experienceThresholds[this.stats.evolutionLevel];
+                    if (nextThreshold && this.stats.experience > nextThreshold - 30) {
+                        // Show how close we are to evolving
+                        const remaining = nextThreshold - this.stats.experience;
+                        if (remaining > 0 && remaining <= 30) {
+                            // Round the remaining XP to avoid long floating-point numbers
+                            const roundedRemaining = Math.ceil(remaining);
+                            this.showMessage(`XP: ${Math.round(this.stats.experience)}/${nextThreshold} (${roundedRemaining} to go)`, 1000);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error in update:', error);
                 }
-                
-                // Update messages
-                this.updateMessages();
             }
             
             handleDeath() {
-                // Set dead state
+                console.log('Handling death...');
                 this.isDead = true;
-                
-                // Darken blob color
-                this.color = '#404040'; // Dark grey
-                
-                // Remove any existing death screen overlay
-                const existingOverlay = document.getElementById('deathOverlay');
-                if (existingOverlay) {
-                    document.body.removeChild(existingOverlay);
+                this.color = '#404040';
+
+                // Remove any existing death screen first
+                const existing = document.getElementById('deathOverlay');
+                if (existing) {
+                    existing.remove();
                 }
-                
-                // Create death screen overlay
-                const overlay = document.createElement('div');
-                overlay.id = 'deathOverlay';
-                overlay.style.position = 'absolute';
-                overlay.style.top = '50%';
-                overlay.style.left = '50%';
-                overlay.style.transform = 'translate(-50%, -50%)';
-                overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
-                overlay.style.padding = '20px';
-                overlay.style.borderRadius = '10px';
-                overlay.style.textAlign = 'center';
-                overlay.style.zIndex = '1000';
-                
-                // Add death message
-                const message = document.createElement('div');
-                message.textContent = 'Your blob has died...';
-                message.style.color = 'white';
-                message.style.fontSize = '24px';
-                message.style.marginBottom = '20px';
-                overlay.appendChild(message);
-                
-                // Add restart button
-                const button = document.createElement('button');
-                button.textContent = 'Restart Game';
-                button.style.padding = '10px 20px';
-                button.style.fontSize = '18px';
-                button.style.backgroundColor = '#4CAF50';
-                button.style.color = 'white';
-                button.style.border = 'none';
-                button.style.borderRadius = '5px';
-                button.style.cursor = 'pointer';
-                button.onmouseover = () => button.style.backgroundColor = '#45a049';
-                button.onmouseout = () => button.style.backgroundColor = '#4CAF50';
-                
-                button.onclick = () => {
-                    // Remove overlay
-                    if (overlay.parentNode) {
-                        document.body.removeChild(overlay);
-                    }
-                    // Reset blob
-                    this.resetBlob();
-                };
-                
-                overlay.appendChild(button);
-                document.body.appendChild(overlay);
+
+                // Create death screen container
+                const container = document.createElement('div');
+                container.id = 'deathOverlay';
+                container.style.cssText = `
+                    position: fixed;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    background-color: rgba(0, 0, 0, 0.8);
+                    padding: 20px;
+                    border-radius: 10px;
+                    text-align: center;
+                    z-index: 1000;
+                `;
+
+                // Add HTML directly
+                container.innerHTML = `
+                    <div style="color: white; font-size: 24px; margin-bottom: 20px;">
+                        Your blob has died...
+                    </div>
+                    <button id="restartButton" style="
+                        padding: 10px 20px;
+                        font-size: 18px;
+                        background-color: #4CAF50;
+                        color: white;
+                        border: none;
+                        border-radius: 5px;
+                        cursor: pointer;
+                        margin: 10px;
+                    ">
+                        Restart Game
+                    </button>
+                    <div style="color: white; font-size: 14px; margin-top: 10px;">
+                        Press 'R' key to restart
+                    </div>
+                `;
+
+                // Add to document
+                document.body.appendChild(container);
+                console.log('Death screen added');
+
+                // Add click handler after the element is in the DOM
+                const self = this;
+                const button = document.getElementById('restartButton');
+                if (button) {
+                    console.log('Found restart button, adding handlers');
+                    
+                    // Try multiple ways to add click handler
+                    button.onclick = function(e) {
+                        console.log('Button clicked (onclick)');
+                        self.resetBlob();
+                        container.remove();
+                    };
+
+                    button.addEventListener('click', function(e) {
+                        console.log('Button clicked (addEventListener)');
+                        self.resetBlob();
+                        container.remove();
+                    }, false);
+
+                    // Also try mousedown event
+                    button.addEventListener('mousedown', function(e) {
+                        console.log('Button mousedown');
+                        self.resetBlob();
+                        container.remove();
+                    }, false);
+
+                    // Make button more obvious it's clickable
+                    button.addEventListener('mouseover', function() {
+                        this.style.backgroundColor = '#45a049';
+                    });
+                    
+                    button.addEventListener('mouseout', function() {
+                        this.style.backgroundColor = '#4CAF50';
+                    });
+                } else {
+                    console.error('Could not find restart button!');
+                }
             }
             
             resetBlob() {
+                console.log('Starting blob reset with world:', this.world);
+                
                 // Reset stats
                 this.stats = new Stats();
+                console.log('Stats reset');
                 
-                // Reset position (keep current position)
+                // Reset position to center of the world
+                const worldSize = this.world.biomeManager.getWorldSize();
+                console.log('World dimensions:', worldSize);
+                this.x = worldSize.width / 2;
+                this.y = worldSize.height / 2;
+                console.log('New position:', { x: this.x, y: this.y });
                 
                 // Reset appearance
-                this.radius = 20;
-                this.color = '#808080'; // Grey color
+                this.radius = 18;  // Increased by 20% from 15 to 18
+                this.color = '#4A148C';
+                this.glowColor = '#4A148C'; // Changed to match the core color (deep purple)
+                this.coreColor = '#4A148C';
+                this.speed = 0.8;
+                console.log('Appearance reset');
                 
                 // Reset evolution traits
                 this.traits = {
@@ -1348,24 +1573,42 @@
                     size: 1.0,
                     glowingSpots: false
                 };
+                console.log('Traits reset');
                 
-                // Reset dead state
+                // Reset inventory and modes
+                this.inventory = new Inventory();
+                this.collectionMode = false;
+                this.isBuildMode = false;
                 this.isDead = false;
+                console.log('Inventory and modes reset');
                 
-                // Show revival message
+                // Reset all movement keys
+                Object.keys(this.keys).forEach(key => {
+                    this.keys[key] = false;
+                });
+                console.log('Movement keys reset');
+                
                 this.showMessage("Blob reborn!", 3000);
+                console.log('Blob reset completed successfully');
             }
             
             updateMessages() {
+                // Ensure messages array exists
+                if (!this.messages || !Array.isArray(this.messages)) {
+                    this.messages = [];
+                    return;
+                }
+                
                 const now = Date.now();
                 
                 // Update each message
                 for (let i = this.messages.length - 1; i >= 0; i--) {
                     const message = this.messages[i];
                     
-                    // Check if the message has expired
-                    if (!message.startTime) {
-                        message.startTime = now;
+                    // Check if message has required properties
+                    if (!message || !message.startTime) {
+                        this.messages.splice(i, 1);
+                        continue;
                     }
                     
                     const elapsed = now - message.startTime;
@@ -1412,6 +1655,54 @@
                 const screenX = this.x - cameraX;
                 const screenY = this.y - cameraY;
                 
+                // Ensure messages array exists
+                if (!this.messages || !Array.isArray(this.messages)) {
+                    this.messages = [];
+                }
+                
+                // Remove any debugging messages that contain evolution information or XP info
+                this.messages = this.messages.filter(msg => {
+                    // Filter out any debug messages containing "to evolve" with unrounded numbers
+                    const containsEvolveInfo = msg.text && typeof msg.text === 'string' && 
+                                            msg.text.includes('to evolve') && 
+                                            /\d+\.\d{5,}/.test(msg.text);
+                    
+                    // Also filter out any XP-related messages that might be causing shadows
+                    const containsXpInfo = msg.text && typeof msg.text === 'string' && 
+                                         msg.text.includes('XP:') && 
+                                         msg.text.includes('to go');
+                    
+                    // Keep message only if it doesn't contain either type of problematic content
+                    return !(containsEvolveInfo || containsXpInfo);
+                });
+                
+                // Update animation properties
+                const now = Date.now();
+                const deltaTime = (now - this.lastUpdateTime) / 1000;
+                this.lastUpdateTime = now;
+                
+                // Update pulse
+                this.pulseTime += deltaTime * 2;
+                this.pulseFactor = 1 + Math.sin(this.pulseTime) * 0.1;
+                
+                // Update rotation
+                this.rotationAngle += deltaTime * 0.5;
+                
+                // Draw glow effect
+                const glowRadius = this.radius * 1.5 * this.pulseFactor;
+                const gradient = ctx.createRadialGradient(
+                    screenX, screenY, this.radius * 0.5,
+                    screenX, screenY, glowRadius
+                );
+                // Convert hex color #4A148C to rgba with 25% opacity (0.25)
+                gradient.addColorStop(0, 'rgba(74, 20, 140, 0.25)'); // Using rgba for deep purple color with opacity
+                gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, glowRadius, 0, Math.PI * 2);
+                ctx.fillStyle = gradient;
+                ctx.fill();
+                
                 // Draw evolution flash if active
                 if (this.evolutionFlash) {
                     ctx.beginPath();
@@ -1423,21 +1714,36 @@
                 
                 // Draw collection radius if collection mode is active
                 if (this.collectionMode) {
+                    // Main collection circle
                     ctx.beginPath();
                     ctx.arc(screenX, screenY, this.collectionRadius, 0, Math.PI * 2);
-                    ctx.strokeStyle = 'rgba(0, 255, 0, 0.3)';
-                    ctx.lineWidth = 2;
+                    ctx.strokeStyle = 'rgba(0, 255, 0, 0.6)'; // Increased opacity from 0.5 to 0.6
+                    ctx.lineWidth = 4; // Increased from 3 to 4
                     ctx.stroke();
+                    ctx.fillStyle = 'rgba(0, 255, 0, 0.1)'; // Add a light fill
+                    ctx.fill();
                     ctx.closePath();
                     
-                    // Add a pulsing effect
-                    const pulseRadius = this.collectionRadius * (0.8 + Math.sin(Date.now() / 300) * 0.2);
-                    ctx.beginPath();
-                    ctx.arc(screenX, screenY, pulseRadius, 0, Math.PI * 2);
-                    ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)';
-                    ctx.lineWidth = 1;
-                    ctx.stroke();
-                    ctx.closePath();
+                    // Add a more dynamic pulsing effect
+                    const pulseTime = Date.now() / 300;
+                    for (let i = 0; i < 3; i++) {
+                        const pulsePhase = pulseTime + i * Math.PI / 3;
+                        const pulseRadius = this.collectionRadius * (0.7 + Math.sin(pulsePhase) * 0.3);
+                        ctx.beginPath();
+                        ctx.arc(screenX, screenY, pulseRadius, 0, Math.PI * 2);
+                        const opacity = 0.7 - (i * 0.2);
+                        ctx.strokeStyle = `rgba(0, 255, 0, ${opacity})`;
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                        ctx.closePath();
+                    }
+                    
+                    // Add text to make it clear
+                    ctx.fillStyle = 'white';
+                    ctx.font = 'bold 16px Arial'; // Make text larger and bold
+                    ctx.textAlign = 'center';
+                    ctx.fillText('Collection Mode Active', screenX, screenY - this.radius - 25);
+                    ctx.fillText('Food auto-collected within circle', screenX, screenY - this.radius - 5);
                 }
                 
                 // Draw build mode indicator
@@ -1454,12 +1760,30 @@
                     ctx.fillText(`Build: ${this.selectedBuildingType}`, screenX, screenY - this.radius - 40);
                 }
                 
-                // Draw blob body
+                // Draw blob main body
                 ctx.beginPath();
-                ctx.arc(screenX, screenY, this.radius, 0, Math.PI * 2);
+                ctx.arc(screenX, screenY, this.radius * this.pulseFactor, 0, Math.PI * 2);
                 ctx.fillStyle = this.color;
                 ctx.fill();
-                ctx.closePath();
+                
+                // Draw blob core
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, this.radius * 0.6 * this.pulseFactor, 0, Math.PI * 2);
+                ctx.fillStyle = this.coreColor;
+                ctx.fill();
+                
+                // Draw swirl effects with smaller size and moved to edges
+                for (let i = 0; i < 3; i++) {
+                    const angle = this.rotationAngle + (i * Math.PI * 2 / 3);
+                    const orbitRadius = this.radius * 0.65 * this.pulseFactor; // Increased from 0.5 to 0.65 to move to edges
+                    const swirlX = screenX + Math.cos(angle) * orbitRadius;
+                    const swirlY = screenY + Math.sin(angle) * orbitRadius;
+                    
+                    ctx.beginPath();
+                    ctx.arc(swirlX, swirlY, this.radius * 0.15, 0, Math.PI * 2); // Reduced from 0.2 to 0.15
+                    ctx.fillStyle = '#4A148C'; // Changed to match the core color (deep purple)
+                    ctx.fill();
+                }
                 
                 // If blob is dead, draw X eyes
                 if (this.isDead) {
@@ -1488,7 +1812,7 @@
                         ctx.fillText(`Taming: ${this.tamingProgress}%`, screenX, screenY - this.radius - 5);
                     }
                     
-                    // Draw simple face representing mood
+                    // Draw blob face
                     this.drawFace(ctx, screenX, screenY);
                 }
                 
@@ -1496,40 +1820,74 @@
                 this.drawMessages(ctx, cameraX, cameraY);
                 
                 // Draw inventory if visible
+                // Use ctx.canvas directly to get dimensions instead of relying on this.canvas
                 this.inventory.draw(ctx, ctx.canvas.width, ctx.canvas.height);
             }
             
             drawFace(ctx, x, y) {
-                const moodPercent = this.stats.mood / 100;
-                
-                // Eyes
+                // Draw eyes
                 const eyeRadius = this.radius * 0.15;
-                const eyeOffsetX = this.radius * 0.3;
-                const eyeOffsetY = this.radius * 0.2;
+                const eyeOffsetX = this.radius * 0.25; // Reduced from 0.3 to 0.25 to keep eyes more centered
+                const eyeOffsetY = this.radius * 0.15; // Reduced from 0.2 to 0.15 to move eyes up slightly
                 
-                // Left eye
+                // White of the eyes
                 ctx.beginPath();
                 ctx.arc(x - eyeOffsetX, y - eyeOffsetY, eyeRadius, 0, Math.PI * 2);
-                ctx.fillStyle = '#000';
+                ctx.fillStyle = '#FFFFFF';
                 ctx.fill();
                 
-                // Right eye
                 ctx.beginPath();
                 ctx.arc(x + eyeOffsetX, y - eyeOffsetY, eyeRadius, 0, Math.PI * 2);
-                ctx.fillStyle = '#000';
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fill();
+                
+                // Pupils - follow a slight circular motion
+                const pupilRadius = eyeRadius * 0.6;
+                const pupilOffsetFactor = 0.3;
+                const pupilAngle = Date.now() / 2000; // Slow rotation
+                
+                // Left pupil
+                ctx.beginPath();
+                ctx.arc(
+                    x - eyeOffsetX + Math.cos(pupilAngle) * pupilRadius * pupilOffsetFactor,
+                    y - eyeOffsetY + Math.sin(pupilAngle) * pupilRadius * pupilOffsetFactor,
+                    pupilRadius,
+                    0, Math.PI * 2
+                );
+                ctx.fillStyle = '#000000';
+                ctx.fill();
+                
+                // Right pupil
+                ctx.beginPath();
+                ctx.arc(
+                    x + eyeOffsetX + Math.cos(pupilAngle + Math.PI) * pupilRadius * pupilOffsetFactor,
+                    y - eyeOffsetY + Math.sin(pupilAngle + Math.PI) * pupilRadius * pupilOffsetFactor,
+                    pupilRadius, 
+                    0, Math.PI * 2
+                );
+                ctx.fillStyle = '#000000';
                 ctx.fill();
                 
                 // Mouth - changes based on mood
-                ctx.beginPath();
+                const moodPercent = this.stats.mood / 100;
+                
+                // Adjustable smile based on mood - moved down slightly
+                const mouthY = y + eyeOffsetY + 2; // Added +2 to move mouth down slightly
+                const smileHeight = moodPercent * 6; // Max height of smile curve
                 const mouthWidth = this.radius * 0.6;
                 
-                // Smiling mouth for happy, straight/frowning for sad
-                const startAngle = 0.2 * Math.PI;
-                const endAngle = 0.8 * Math.PI;
-                const mouthY = y + eyeOffsetY;
+                ctx.beginPath();
+                ctx.moveTo(x - mouthWidth/2, mouthY);
                 
-                ctx.arc(x, mouthY, mouthWidth / 2, startAngle, endAngle);
-                ctx.strokeStyle = '#000';
+                // Create a quadratic curve (smile or frown based on mood)
+                ctx.quadraticCurveTo(
+                    x, // control point x
+                    mouthY + smileHeight, // control point y 
+                    x + mouthWidth/2, // end point x
+                    mouthY // end point y
+                );
+                
+                ctx.strokeStyle = '#000000';
                 ctx.lineWidth = 2;
                 ctx.stroke();
             }
@@ -1673,22 +2031,46 @@
             }
             
             drawMessages(ctx, cameraX, cameraY) {
+                // Check if messages array exists
+                if (!this.messages || !Array.isArray(this.messages)) {
+                    this.messages = [];
+                    return;
+                }
+                
+                // First, make sure we don't have more than 5 messages at once to prevent clutter
+                if (this.messages.length > 5) {
+                    // Keep only the 5 newest messages
+                    this.messages = this.messages.slice(-5);
+                }
+                
                 ctx.textAlign = 'center';
                 ctx.font = '14px Arial';
                 
-                this.messages.forEach(message => {
+                // Create a small offset for message positions to prevent overlap
+                let messageOffset = 0;
+                
+                this.messages.forEach((message, index) => {
                     // Calculate screen position for the message
                     const screenX = message.x - cameraX;
-                    const screenY = message.y - cameraY;
+                    const screenY = message.y - cameraY - (messageOffset * index);
                     
                     // Draw message with fading effect
                     ctx.fillStyle = `rgba(255, 255, 255, ${message.alpha})`;
                     ctx.strokeStyle = `rgba(0, 0, 0, ${message.alpha})`;
-                    ctx.lineWidth = 3;
+                    ctx.lineWidth = 2;
                     
-                    // Draw text stroke for better visibility
-                    ctx.strokeText(message.text, screenX, screenY);
+                    // Draw text stroke for better visibility, using a shadow instead of stroke
+                    ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+                    ctx.shadowBlur = 4;
+                    ctx.shadowOffsetX = 0;
+                    ctx.shadowOffsetY = 0;
+                    
+                    // Draw main text
                     ctx.fillText(message.text, screenX, screenY);
+                    
+                    // Reset shadow to prevent it from affecting other drawing operations
+                    ctx.shadowColor = 'transparent';
+                    ctx.shadowBlur = 0;
                 });
                 
                 // Reset text alignment
@@ -1707,7 +2089,7 @@
                 
                 // Base size increase with each evolution, but cap it after level 10
                 if (level <= 10) {
-                    this.radius = 20 + (level * 2);
+                    this.radius = 18 + (level * 1.8); // Adjusted from 15 + (level * 1.5) to match the 20% size increase
                 }
                 
                 // Increase inventory size every 3 levels
@@ -1716,28 +2098,57 @@
                     newTraits.push('Inventory +4 slots');
                 }
                 
+                // Guarantee speed increase with each level - base speed starts at 0.8
+                // Calculate new speed with a consistent increase per level
+                let baseIncrease = 0.15; // 0.15 speed boost per level
+                
+                // Calculate normal speed before any special adjustments
+                let normalSpeed = 0.8 + (level * baseIncrease);
+                
+                // Speed adjustment based on evolution level
+                const dogSpeed = 4; // Dog's speed for reference
+                const maxBlobSpeed = dogSpeed * 0.8; // Blob should be at most 80% of dog's speed
+                
+                if (level >= 3) {
+                    // For level 3 (Loyal), set to exactly 1.7
+                    if (level === 3) {
+                        this.speed = 1.7;
+                        newTraits.push(`Speed: ${this.speed.toFixed(2)} (Faster!)`);
+                    } 
+                    // For level 4 (Companion), set to exactly 2.1
+                    else if (level === 4) {
+                        this.speed = 2.1;
+                        newTraits.push(`Speed: ${this.speed.toFixed(2)} (Even Faster!)`);
+                    }
+                    // For level 5+ (Guardian), set to exactly 2.5
+                    else if (level >= 5) {
+                        this.speed = 2.5;
+                        newTraits.push(`Speed: ${this.speed.toFixed(2)} (Maximum Speed)`);
+                    }
+                } else {
+                    // Lower levels use normal speed calculation
+                    this.speed = Math.min(2.0, normalSpeed);
+                    newTraits.push(`Speed: ${this.speed.toFixed(2)}`);
+                }
+                
                 // Different evolution paths based on level
                 if (level <= 5) {
-                    // Early evolutions - same as before
+                    // Early evolutions - add traits but don't change the guaranteed speed boost
                     switch(level) {
                         case 1:
                             // First evolution - adapt to dominant biome
                             if (dominantBiome === 'Desert') {
                                 this.traits.spikes = true;
                                 newTraits.push('Spikes');
-                                this.speed = 1.0; // Small speed increase
                             } else if (dominantBiome === 'Water') {
                                 this.traits.fins = true;
                                 newTraits.push('Fins');
-                                this.speed = 1.1; // Small speed increase
                             } else if (dominantBiome === 'Mountains') {
                                 this.traits.furCoat = true;
                                 newTraits.push('Fur Coat');
-                                this.speed = 1.0; // Small speed increase
                             } else if (dominantBiome === 'Forest') {
                                 this.traits.camouflage = true;
                                 newTraits.push('Camouflage');
-                                this.speed = 1.0; // Small speed increase
                             }
                             break;
                             
@@ -1746,25 +2157,22 @@
                             if (favoriteFood === 'fish') {
                                 this.traits.fins = true;
                                 newTraits.push('Fins');
-                                this.speed = 0.7; // Minimal speed increase
                             } else if (favoriteFood === 'berries' || favoriteFood === 'nuts') {
-                                this.speed = 0.65; // Minimal speed increase
                                 this.traits.size = 1.2;
                                 newTraits.push('Increased Size');
                             } else if (favoriteFood === 'minerals') {
                                 this.traits.spikes = true; // Mineral-based spikes
                                 newTraits.push('Mineral Spikes');
-                                // Better energy from minerals
                             }
                             break;
                             
                         case 3:
-                            // Third evolution - special abilities
+                            // Third evolution - special abilities (Loyal Blob)
                             this.traits.glowingSpots = true;
                             newTraits.push('Glowing Spots');
-                            this.speed = 0.75; // Minimal speed increase
                             this.traits.size = 1.5;
                             newTraits.push('Advanced Size');
+                            // Scaled speed boost is already applied in the earlier code (50% boost at this level)
                             break;
                             
                         case 4:
@@ -1774,36 +2182,23 @@
                             this.traits.furCoat = true;
                             this.traits.camouflage = true;
                             newTraits.push('Environmental Mastery');
-                            this.speed = 0.8; // Minimal speed increase
                             break;
                             
                         case 5:
                             // Fifth evolution - advanced blob
                             this.traits.size = 2.0;
-                            this.radius = 40;
-                            this.speed = 0.85; // Minimal speed increase
+                            this.radius = 30; // Reduced from 40 to 30
                             newTraits.push('Advanced Blob Form');
                             break;
                     }
                 } else {
                     // Higher level evolutions - add new traits based on level
-                    if (level % 5 === 0) {
-                        // Every 5 levels, increase speed very slightly
-                        this.speed += 0.1; // Small speed increase
-                        newTraits.push(`Speed +0.1`);
-                    }
-                    
                     // Every odd level adds a random trait
                     if (level % 2 === 1) {
                         const traits = ['Armor', 'Tentacles', 'Venom', 'Telepathy', 'Magnetism', 
                                         'Regeneration', 'Shapeshifting', 'Teleportation', 'Force Field'];
                         const randomTrait = traits[Math.floor(Math.random() * traits.length)];
                         newTraits.push(randomTrait);
-                    }
-                    
-                    // Cap maximum speed
-                    if (this.speed > 2.5) {
-                        this.speed = 2.5; // Max speed still slower than player's speed of 4
                     }
                 }
                 
@@ -1827,8 +2222,11 @@
             // Method to consume food given by a person
             consumePersonFood(food) {
                 // Apply food effects
-                this.stats.feed(food.nutrientValue, food.type);
+                const hungerRestored = this.stats.feed(food.nutrientValue, food.type);
                 this.stats.rest(food.energyValue);
+                
+                // Add experience directly from food (this was missing)
+                this.stats.experience += food.nutrientValue;
                 
                 // Increase taming progress when fed
                 if (!this.isPet) {
@@ -1838,18 +2236,96 @@
                         this.tamingProgress = 100;
                         this.showMessage("You've tamed the blob!", 3000);
                     } else {
-                        this.showMessage(`Taming: ${this.tamingProgress}%`, 2000);
+                        this.showMessage(`Taming: ${Math.floor(this.tamingProgress)}%`, 2000);
                     }
                 } else {
                     // Already a pet, show happiness
                     this.showMessage("Yum! Thank you!", 2000);
                 }
                 
-                // Check for regular evolution based on experience
+                // Show XP gain message - use food.nutrientValue for XP (not the amplified hunger value)
+                this.showMessage(`+${food.nutrientValue} XP`, 1500);
+                
+                // Check for evolution after feeding
+                let didEvolve = false;
+                
                 if (this.checkEvolution()) {
-                    const evolutionDetails = this.stats.getEvolutionDetails();
+                    const currentLevel = this.stats.evolutionLevel;
+                    const evolutionDetails = {
+                        level: currentLevel,
+                        dominantBiome: this.stats.dominantBiome,
+                        favoriteFood: this.stats.favoriteFood
+                    };
+                    
+                    console.log('Evolution triggered at level', currentLevel);
                     this.evolve(evolutionDetails);
+                    didEvolve = true;
+                    this.showMessage(`Evolved to level ${currentLevel}!`, 3000);
                 }
+                
+                // After evolution, reset person's feeding state to prevent issues
+                if (window.gameInstance && window.gameInstance.person) {
+                    // Schedule this after a slight delay to prevent race conditions
+                    setTimeout(() => {
+                        // Store the current selected food and item
+                        const person = window.gameInstance.person;
+                        const currentSelectedItem = person.inventory.selectedItem;
+                        const activeFood = person.activeFood;
+                        
+                        console.log('Selected item after evolution:', currentSelectedItem);
+                        console.log('Active food after evolution:', activeFood);
+                        
+                        // Force an inventory update event to refresh the UI and prevent freeze
+                        const event = new CustomEvent('inventorySelectionChanged', {
+                            detail: {
+                                selectedItem: currentSelectedItem,
+                                previousSelectedItem: currentSelectedItem
+                            }
+                        });
+                        window.dispatchEvent(event);
+                        
+                        // If feeding was in progress, make sure the food circle position is updated
+                        if (person.isFeeding && person.activeFood) {
+                            person.isFeeding = false;
+                            
+                            // Restart feeding after a short delay
+                            setTimeout(() => {
+                                person.isFeeding = true;
+                                console.log('Restarting feeding process after evolution');
+                                
+                                // Calculate appropriate distance based on dog and blob size
+                                const dogSizeMultiplier = 1.5;
+                                const blobRadiusAdjustment = this.radius * 0.8;
+                                
+                                // Position the food circle with new size considerations
+                                const foodCircleDistance = person.foodCircle.radius * 2 + 20 + blobRadiusAdjustment;
+                                
+                                // Reposition the food circle based on direction
+                                switch(person.direction) {
+                                    case 'up':
+                                        person.foodCircle.x = person.x;
+                                        person.foodCircle.y = person.y - person.height * dogSizeMultiplier - foodCircleDistance;
+                                        break;
+                                    case 'down':
+                                        person.foodCircle.x = person.x;
+                                        person.foodCircle.y = person.y + person.height * dogSizeMultiplier + foodCircleDistance;
+                                        break;
+                                    case 'left':
+                                        person.foodCircle.x = person.x - person.width * dogSizeMultiplier - foodCircleDistance;
+                                        person.foodCircle.y = person.y;
+                                        break;
+                                    case 'right':
+                                        person.foodCircle.x = person.x + person.width * dogSizeMultiplier + foodCircleDistance;
+                                        person.foodCircle.y = person.y;
+                                        break;
+                                }
+                                console.log('Food circle repositioned after evolution');
+                            }, 100);
+                        }
+                    }, 100);
+                }
+                
+                return didEvolve;
             }
 
             // Add building related methods
@@ -1905,16 +2381,18 @@
         class World {
             constructor(canvas) {
                 this.canvas = canvas;
-                this.biomeManager = new BiomeManager(canvas.width, canvas.height, 50); // 50px tile size
+                this.biomeManager = new BiomeManager(canvas.width, canvas.height, 30); // Updated tileSize parameter
                 
                 // Get the world size
                 const worldSize = this.biomeManager.getWorldSize();
                 this.worldWidth = worldSize.width;
                 this.worldHeight = worldSize.height;
                 
-                // Camera position (starts centered on the world)
-                this.cameraX = 0;
-                this.cameraY = 0;
+                // Initialize camera position to center of the world
+                this.cameraX = this.worldWidth / 2 - canvas.width / 2;
+                this.cameraY = this.worldHeight / 2 - canvas.height / 2;
+                this.normalizedCameraX = this.cameraX;
+                this.normalizedCameraY = this.cameraY;
             }
             
             // Update camera to follow the blob
@@ -2021,10 +2499,10 @@
         class StatsDisplay {
             constructor(canvas) {
                 this.canvas = canvas;
-                // Stats panel dimensions
-                this.panelWidth = 250;
-                this.panelHeight = 230; // Increased height for traits display
-                this.barWidth = 120;
+                // Stats panel dimensions - reduced width for more compact display
+                this.panelWidth = 190; // Reduced from 230 to 190
+                this.panelHeight = 250; // Keep same height
+                this.barWidth = 70; // Reduced from 100 to 70 for narrower bars
             }
             
             draw(ctx, stats, currentBiome, traits) {
@@ -2035,7 +2513,7 @@
                 ctx.fillRect(10, 10, this.panelWidth, this.panelHeight);
                 
                 // Set text style
-                ctx.font = '16px Arial';
+                ctx.font = '12px Arial'; // Changed from 16px to 12px to match controls panel
                 ctx.fillStyle = 'white';
                 
                 // Draw stats headings and values
@@ -2059,13 +2537,15 @@
                 // Experience bar
                 this.drawExperienceBar(ctx, stats, 20, 145);
                 
-                // Evolution level and current biome
+                // Evolution level
                 ctx.fillText(`Evolution: Level ${evolutionLevel}`, 20, 165);
+                
+                // Blob's current biome - renamed to clarify it's for the blob
                 if (currentBiome) {
-                    ctx.fillText(`Current Biome: ${currentBiome.type}`, 20, 185);
+                    ctx.fillText(`Blob Biome: ${currentBiome.type}`, 20, 185);
                 }
                 
-                // Food counter - updated text to show instant evolution
+                // Food counter
                 ctx.fillText(`Food: Evolve On Eat`, 20, 205);
                 
                 // Traits display
@@ -2084,8 +2564,20 @@
                     ctx.fillText(traitsText, 20, 225);
                 }
                 
-                // Reset text color
+                // Dog's current biome - new addition
+                if (window.gameInstance && window.gameInstance.person && window.gameInstance.world) {
+                    const dogBiome = window.gameInstance.world.getBiomeAt(
+                        window.gameInstance.person.x, 
+                        window.gameInstance.person.y
+                    );
+                    if (dogBiome) {
+                        ctx.fillText(`Dog Biome: ${dogBiome.type}`, 20, 245);
+                    }
+                }
+                
+                // Reset text color and font
                 ctx.fillStyle = 'white';
+                // Used 12px font throughout this panel to match controls panel
             }
             
             drawStatBar(ctx, label, value, x, y, color) {
@@ -2103,7 +2595,7 @@
                 const barValue = Math.min(value, this.barWidth);
                 ctx.fillRect(x + 70, y - 12, barValue, 15);
                 
-                // Draw value text
+                // Draw value text - adjusted position for narrower panel
                 ctx.fillStyle = 'white';
                 ctx.fillText(Math.round(value) + '%', x + this.barWidth + 75, y);
             }
@@ -2179,12 +2671,14 @@
 
         // Person class to interact with the blob
         class Person {
-            constructor(x, y) {
+            constructor(x, y, world) {  // Add world parameter
                 this.x = x;
                 this.y = y;
-                this.width = 30;
-                this.height = 60;
-                this.color = '#FF9966'; // Skin tone
+                this.world = world;     // Store world reference
+                this.width = 31;       // Increased by 40% from 22 to 31
+                this.height = 63;      // Increased by 40% from 45 to 63
+                this.color = '#8B4513'; // Brown for dog fur (changed from orange-red)
+                this.outlineColor = '#5D4037'; // Darker brown outline (changed from purple)
                 this.speed = 4;
                 this.keys = {
                     KeyW: false,
@@ -2194,6 +2688,12 @@
                 };
                 this.direction = 'down'; // facing direction: up, down, left, right
                 
+                // Animation properties
+                this.walkCycle = 0;
+                this.isMoving = false;
+                this.lastMoveTime = Date.now();
+                this.tailWagAngle = 0; // New property for tail wagging
+                
                 // Initialize inventory system
                 this.inventory = new Inventory();
                 this.inventory.maxSlots = 20; // Give person more inventory slots
@@ -2202,9 +2702,12 @@
                 this.foodCircle = {
                     x: 0, 
                     y: 0, 
-                    radius: 15,
+                    radius: 15, // Increased from 10 to 15 for better visibility
                     color: '#FFA500'
                 };
+                
+                // Initialize messages array
+                this.messages = [];
                 
                 // Store canvas reference
                 this.canvas = document.getElementById('gameCanvas');
@@ -2219,32 +2722,45 @@
                     
                     // Handle inventory click
                     if (this.inventory.visible) {
-                        this.inventory.handleClick(canvasX, canvasY, this.canvas.width, this.canvas.height);
-                        // Update active food based on selected item
-                        const selectedItem = this.inventory.items[this.inventory.selectedItem];
-                        console.log('Selected item for feeding:', selectedItem);
+                        // Use document.getElementById instead of this.canvas which might be undefined
+                        const canvas = document.getElementById('gameCanvas');
+                        this.inventory.handleClick(canvasX, canvasY, canvas.width, canvas.height);
+                        // activeFood is now updated via the inventorySelectionChanged event
+                    }
+                });
+                
+                // Listen for inventory selection changes
+                window.addEventListener('inventorySelectionChanged', (e) => {
+                    console.log('Inventory selection changed:', e.detail);
+                    // Update active food based on selected item
+                    const selectedItem = this.inventory.selectedItem ? 
+                                        this.inventory.items[this.inventory.selectedItem] : null;
+                    
+                    if (selectedItem && selectedItem.type === 'resource') {
+                        this.activeFood = {
+                            type: selectedItem.name,
+                            nutrientValue: 10,
+                            energyValue: 5
+                        };
                         
-                        if (selectedItem && selectedItem.type === 'resource') {
-                            this.activeFood = {
-                                type: selectedItem.name,
-                                nutrientValue: 10,
-                                energyValue: 5
-                            };
-                            
-                            // Update food circle color based on food type
-                            switch(selectedItem.name.toLowerCase()) {
-                                case 'berries': this.foodCircle.color = '#CC0066'; break;
-                                case 'nuts': this.foodCircle.color = '#8B4513'; break;
-                                case 'cactus': this.foodCircle.color = '#7FFF00'; break;
-                                case 'fish': this.foodCircle.color = '#4682B4'; break;
-                                case 'minerals': this.foodCircle.color = '#B8B8B8'; break;
-                                default: this.foodCircle.color = '#FFFFFF';
-                            }
-                            console.log('Updated active food:', this.activeFood);
-                            this.showMessage(`Selected ${selectedItem.name} for feeding`);
-                        } else {
-                            this.activeFood = null;
-                            console.log('No valid food item selected');
+                        // Update food circle color based on food type
+                        switch(selectedItem.name.toLowerCase()) {
+                            case 'berries': this.foodCircle.color = '#CC0066'; break;
+                            case 'nuts': this.foodCircle.color = '#8B4513'; break;
+                            case 'cactus': this.foodCircle.color = '#7FFF00'; break;
+                            case 'fish': this.foodCircle.color = '#4682B4'; break;
+                            case 'minerals': this.foodCircle.color = '#B8B8B8'; break;
+                            default: this.foodCircle.color = '#FFFFFF';
+                        }
+                        console.log('Updated active food:', this.activeFood);
+                        this.showMessage(`Selected ${selectedItem.name} for feeding`);
+                    } else {
+                        // Clear active food if no valid item is selected
+                        this.activeFood = null;
+                        console.log('No valid food item selected');
+                        if (this.isFeeding) {
+                            this.isFeeding = false;
+                            this.showMessage('Feeding stopped');
                         }
                     }
                 });
@@ -2259,45 +2775,70 @@
                     // Press Q to feed blob with currently selected food
                     if (e.code === 'KeyQ') {
                         if (this.inventory.selectedItem && this.inventory.items[this.inventory.selectedItem]) {
-                            this.isFeeding = true;
-                            const selectedItem = this.inventory.items[this.inventory.selectedItem];
-                            console.log('Feeding with selected item:', selectedItem);
-                            
-                            this.activeFood = {
-                                type: selectedItem.name,
-                                nutrientValue: 10,
-                                energyValue: 5
-                            };
-                            
-                            // Update food circle color based on food type
-                            switch(selectedItem.name.toLowerCase()) {
-                                case 'berries': this.foodCircle.color = '#CC0066'; break;
-                                case 'nuts': this.foodCircle.color = '#8B4513'; break;
-                                case 'cactus': this.foodCircle.color = '#7FFF00'; break;
-                                case 'fish': this.foodCircle.color = '#4682B4'; break;
-                                case 'minerals': this.foodCircle.color = '#B8B8B8'; break;
-                                default: this.foodCircle.color = '#FFFFFF';
-                            }
-                            
-                            // Position the food circle
-                            switch(this.direction) {
-                                case 'up':
-                                    this.foodCircle.x = this.x;
-                                    this.foodCircle.y = this.y - this.height/2 - this.foodCircle.radius * 2;
-                                    break;
-                                case 'down':
-                                    this.foodCircle.x = this.x;
-                                    this.foodCircle.y = this.y + this.height/2 + this.foodCircle.radius * 2;
-                                    break;
-                                case 'left':
-                                    this.foodCircle.x = this.x - this.width/2 - this.foodCircle.radius * 2;
-                                    this.foodCircle.y = this.y;
-                                    break;
-                                case 'right':
-                                    this.foodCircle.x = this.x + this.width/2 + this.foodCircle.radius * 2;
-                                    this.foodCircle.y = this.y;
-                                    break;
-                            }
+                            // Reset feeding state first to ensure clean start
+                            this.isFeeding = false;
+                            setTimeout(() => {
+                                // Set feeding state after a brief delay
+                                this.isFeeding = true;
+                                const selectedItem = this.inventory.items[this.inventory.selectedItem];
+                                console.log('Feeding with selected item:', selectedItem);
+                                
+                                this.activeFood = {
+                                    type: selectedItem.name,
+                                    nutrientValue: 10,
+                                    energyValue: 5
+                                };
+                                
+                                // Update food circle color based on food type
+                                switch(selectedItem.name.toLowerCase()) {
+                                    case 'berries': this.foodCircle.color = '#CC0066'; break;
+                                    case 'nuts': this.foodCircle.color = '#8B4513'; break;
+                                    case 'cactus': this.foodCircle.color = '#7FFF00'; break;
+                                    case 'fish': this.foodCircle.color = '#4682B4'; break;
+                                    case 'minerals': this.foodCircle.color = '#B8B8B8'; break;
+                                    default: this.foodCircle.color = '#FFFFFF';
+                                }
+                                
+                                // Ensure food circle is visible - force a minimum radius
+                                this.foodCircle.radius = Math.max(15, this.foodCircle.radius);
+                                
+                                // Get blob for reference size if available
+                                const blob = window.gameInstance ? window.gameInstance.blob : null;
+                                
+                                // Calculate appropriate distance based on dog and blob size
+                                // Use a fixed multiplier of the dog size plus a margin
+                                const dogSizeMultiplier = 1.5;
+                                const blobRadiusAdjustment = blob ? blob.radius * 0.8 : 0;
+                                
+                                // Position the food circle further away to account for larger dog and blob sizes
+                                const foodCircleDistance = this.foodCircle.radius * 2 + 20 + blobRadiusAdjustment;
+                                
+                                // Position the food circle
+                                switch(this.direction) {
+                                    case 'up':
+                                        this.foodCircle.x = this.x;
+                                        this.foodCircle.y = this.y - this.height * dogSizeMultiplier - foodCircleDistance;
+                                        break;
+                                    case 'down':
+                                        this.foodCircle.x = this.x;
+                                        this.foodCircle.y = this.y + this.height * dogSizeMultiplier + foodCircleDistance;
+                                        break;
+                                    case 'left':
+                                        this.foodCircle.x = this.x - this.width * dogSizeMultiplier - foodCircleDistance;
+                                        this.foodCircle.y = this.y;
+                                        break;
+                                    case 'right':
+                                        this.foodCircle.x = this.x + this.width * dogSizeMultiplier + foodCircleDistance;
+                                        this.foodCircle.y = this.y;
+                                        break;
+                                }
+                                
+                                console.log('Food circle positioned at:', 
+                                          {x: this.foodCircle.x, y: this.foodCircle.y}, 
+                                          'Direction:', this.direction,
+                                          'Blob radius:', blob ? blob.radius : 'unknown',
+                                          'isFeeding state:', this.isFeeding);
+                            }, 50);
                         } else {
                             console.log('No food selected for feeding');
                             this.showMessage('Select food from inventory first!');
@@ -2346,6 +2887,33 @@
                     this.direction = 'right';
                 }
                 
+                // Get the current biome the person is in
+                let currentBiome = null;
+                if (this.world && this.world.biomeManager) {
+                    currentBiome = this.world.biomeManager.getBiomeAt(this.x, this.y);
+                }
+                
+                // Apply biome-specific movement modifiers
+                let biomeFactor = 1.0;
+                if (currentBiome) {
+                    // Apply water slowdown
+                    if (currentBiome.type === 'Water') {
+                        biomeFactor = 0.5; // 50% slower in water (changed from 0.7)
+                    }
+                    // Apply desert slowdown
+                    else if (currentBiome.type === 'Desert') {
+                        biomeFactor = 0.85; // 15% slower in desert
+                    }
+                    // Apply mountain slowdown
+                    else if (currentBiome.type === 'Mountains') {
+                        biomeFactor = 0.8; // 20% slower in mountains
+                    }
+                }
+                
+                // Apply speed modifiers
+                dx *= biomeFactor;
+                dy *= biomeFactor;
+                
                 // Move the person
                 this.x += dx;
                 this.y += dy;
@@ -2358,23 +2926,40 @@
                 
                 // Update food circle position if feeding
                 if (this.isFeeding) {
-                    switch(this.direction) {
-                        case 'up':
-                            this.foodCircle.x = this.x;
-                            this.foodCircle.y = this.y - this.height/2 - this.foodCircle.radius * 2;
-                            break;
-                        case 'down':
-                            this.foodCircle.x = this.x;
-                            this.foodCircle.y = this.y + this.height/2 + this.foodCircle.radius * 2;
-                            break;
-                        case 'left':
-                            this.foodCircle.x = this.x - this.width/2 - this.foodCircle.radius * 2;
-                            this.foodCircle.y = this.y;
-                            break;
-                        case 'right':
-                            this.foodCircle.x = this.x + this.width/2 + this.foodCircle.radius * 2;
-                            this.foodCircle.y = this.y;
-                            break;
+                    // Ensure food circle is visible - force a minimum radius
+                    this.foodCircle.radius = Math.max(15, this.foodCircle.radius);
+                    
+                    // Get blob for reference size if available
+                    const blob = window.gameInstance ? window.gameInstance.blob : null;
+                    
+                    // Only calculate this if we have a blob reference
+                    if (blob) {
+                        // Calculate appropriate distance based on dog and blob size
+                        // Use a fixed multiplier of the dog size plus a margin
+                        const dogSizeMultiplier = 1.5;
+                        const blobRadiusAdjustment = blob.radius * 0.8;
+                        
+                        // Position the food circle further away to account for larger dog and blob sizes
+                        const foodCircleDistance = this.foodCircle.radius * 2 + 20 + blobRadiusAdjustment;
+                        
+                        switch(this.direction) {
+                            case 'up':
+                                this.foodCircle.x = this.x;
+                                this.foodCircle.y = this.y - this.height * dogSizeMultiplier - foodCircleDistance;
+                                break;
+                            case 'down':
+                                this.foodCircle.x = this.x;
+                                this.foodCircle.y = this.y + this.height * dogSizeMultiplier + foodCircleDistance;
+                                break;
+                            case 'left':
+                                this.foodCircle.x = this.x - this.width * dogSizeMultiplier - foodCircleDistance;
+                                this.foodCircle.y = this.y;
+                                break;
+                            case 'right':
+                                this.foodCircle.x = this.x + this.width * dogSizeMultiplier + foodCircleDistance;
+                                this.foodCircle.y = this.y;
+                                break;
+                        }
                     }
                 }
             }
@@ -2390,35 +2975,88 @@
                     return;
                 }
                 
-                // Draw body
-                ctx.fillStyle = this.color;
-                ctx.fillRect(screenX - this.width/2, screenY - this.height/2, this.width, this.height);
+                // Animation logic - update walk cycle when moving
+                const now = Date.now();
+                this.isMoving = this.keys.KeyW || this.keys.KeyA || this.keys.KeyS || this.keys.KeyD;
                 
-                // Draw head
+                if (this.isMoving) {
+                    // Advance walk cycle every 150ms while moving
+                    if (now - this.lastMoveTime > 150) {
+                        this.walkCycle = (this.walkCycle + 1) % 4;
+                        this.lastMoveTime = now;
+                    }
+                } else {
+                    // Reset walk cycle when standing still
+                    this.walkCycle = 0;
+                }
+                
+                // Update tail wag animation
+                this.tailWagAngle = Math.sin(now / 200) * 0.5;
+                
+                // Draw shadow
                 ctx.beginPath();
-                ctx.arc(screenX, screenY - this.height/2, this.width/2, 0, Math.PI * 2);
-                ctx.fillStyle = this.color;
+                ctx.ellipse(screenX, screenY + this.height/2 - 5, this.width/2, this.width/4, 0, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
                 ctx.fill();
                 
-                // Draw face
-                this.drawFace(ctx, screenX, screenY - this.height/2);
+                // Draw dog body based on direction
+                this.drawDogBody(ctx, screenX, screenY);
+                
+                // Draw legs
+                this.drawLegs(ctx, screenX, screenY);
+                
+                // Draw tail
+                this.drawTail(ctx, screenX, screenY);
+                
+                // Draw dog head
+                this.drawDogHead(ctx, screenX, screenY);
                 
                 // Draw food circle if feeding
                 if (this.isFeeding) {
+                    // Double check that we really should be feeding
+                    console.log('Drawing food circle - isFeeding state:', this.isFeeding);
+                    
                     const foodScreenX = this.foodCircle.x - cameraX;
                     const foodScreenY = this.foodCircle.y - cameraY;
                     
+                    // Debug log food circle info
+                    console.log('Drawing food circle:', {
+                        x: foodScreenX, 
+                        y: foodScreenY, 
+                        radius: this.foodCircle.radius,
+                        color: this.foodCircle.color
+                    });
+                    
+                    // Ensure the food circle is big enough to be visible
+                    const displayRadius = Math.max(this.foodCircle.radius, 15);
+                    
+                    // Draw main food circle with a strong outline for better visibility
                     ctx.beginPath();
-                    ctx.arc(foodScreenX, foodScreenY, this.foodCircle.radius, 0, Math.PI * 2);
+                    ctx.arc(foodScreenX, foodScreenY, displayRadius, 0, Math.PI * 2);
                     ctx.fillStyle = this.foodCircle.color;
                     ctx.fill();
+                    ctx.strokeStyle = '#000000';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
                     
-                    // Add a little shine/highlight to the food
+                    // Add a glow effect for better visibility
+                    const gradient = ctx.createRadialGradient(
+                        foodScreenX, foodScreenY, displayRadius * 0.5,
+                        foodScreenX, foodScreenY, displayRadius * 1.5
+                    );
+                    gradient.addColorStop(0, 'rgba(255, 255, 255, 0)');
+                    gradient.addColorStop(1, 'rgba(255, 255, 255, 0.3)');
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(foodScreenX, foodScreenY, displayRadius * 1.5, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Add a little shine/highlight
                     ctx.beginPath();
                     ctx.arc(
-                        foodScreenX - this.foodCircle.radius/3, 
-                        foodScreenY - this.foodCircle.radius/3, 
-                        this.foodCircle.radius/3, 
+                        foodScreenX - displayRadius/3, 
+                        foodScreenY - displayRadius/3, 
+                        displayRadius/3, 
                         0, Math.PI * 2
                     );
                     ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
@@ -2433,6 +3071,590 @@
                 if (this.inventory.visible) {
                     this.inventory.draw(ctx, ctx.canvas.width, ctx.canvas.height);
                 }
+            }
+            
+            drawDogBody(ctx, x, y) {
+                // Draw main body - more athletic dog shape with better proportions
+                ctx.beginPath();
+                ctx.ellipse(x, y, this.width * 0.9, this.height * 0.25, 0, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                
+                // Add some muscle definition/shading to make the dog look more athletic
+                const gradientBody = ctx.createLinearGradient(x - this.width * 0.9, y, x + this.width * 0.9, y);
+                gradientBody.addColorStop(0, this.color);
+                gradientBody.addColorStop(0.5, '#A0522D'); // Slightly darker in middle for definition
+                gradientBody.addColorStop(1, this.color);
+                ctx.fillStyle = gradientBody;
+                ctx.beginPath();
+                ctx.ellipse(x, y, this.width * 0.85, this.height * 0.2, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.strokeStyle = this.outlineColor;
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+                
+                // Draw stylish collar - now a leather collar with studs
+                ctx.beginPath();
+                ctx.moveTo(x - this.width * 0.35, y - this.height * 0.12);
+                ctx.lineTo(x + this.width * 0.35, y - this.height * 0.12);
+                ctx.lineWidth = 3.5;
+                ctx.strokeStyle = '#5D4037'; // Darker brown leather color
+                ctx.stroke();
+                
+                // Add collar studs
+                for (let i = 0; i <= 3; i++) {
+                    const studX = x - this.width * 0.3 + (this.width * 0.6 * (i/3));
+                    ctx.beginPath();
+                    ctx.arc(studX, y - this.height * 0.12, 2, 0, Math.PI * 2);
+                    ctx.fillStyle = '#CDDC39'; // Metallic lime color for studs
+                    ctx.fill();
+                    ctx.strokeStyle = '#AFB42B';
+                    ctx.lineWidth = 0.5;
+                    ctx.stroke();
+                }
+                
+                // Draw collar tag - larger, more detailed
+                ctx.beginPath();
+                ctx.arc(x, y - this.height * 0.12, 4, 0, Math.PI * 2);
+                const gradientTag = ctx.createRadialGradient(x, y - this.height * 0.12, 0, x, y - this.height * 0.12, 4);
+                gradientTag.addColorStop(0, '#FFF176'); // Lighter gold in center
+                gradientTag.addColorStop(1, '#FFC107'); // Darker gold at edges
+                ctx.fillStyle = gradientTag;
+                ctx.fill();
+                ctx.strokeStyle = '#FFA000';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                
+                // Add a small bone shape to the tag
+                ctx.beginPath();
+                ctx.ellipse(x - 1, y - this.height * 0.12 - 1, 1, 0.7, 0, 0, Math.PI * 2);
+                ctx.ellipse(x + 1, y - this.height * 0.12 - 1, 1, 0.7, 0, 0, Math.PI * 2);
+                ctx.ellipse(x - 1, y - this.height * 0.12 + 1, 1, 0.7, 0, 0, Math.PI * 2);
+                ctx.ellipse(x + 1, y - this.height * 0.12 + 1, 1, 0.7, 0, 0, Math.PI * 2);
+                ctx.fillStyle = '#795548';
+                ctx.fill();
+            }
+            
+            drawTail(ctx, x, y) {
+                ctx.save();
+                
+                // Position at the back of the dog based on direction
+                let tailX = x;
+                let tailY = y;
+                
+                switch(this.direction) {
+                    case 'left':
+                        tailX = x + this.width * 0.7;
+                        tailY = y - this.height * 0.05;
+                        break;
+                    case 'right':
+                        tailX = x - this.width * 0.7;
+                        tailY = y - this.height * 0.05;
+                        break;
+                    case 'up':
+                        tailX = x;
+                        tailY = y + this.height * 0.25;
+                        break;
+                    case 'down':
+                        tailX = x;
+                        tailY = y - this.height * 0.25;
+                        break;
+                }
+                
+                // Increase tail wag amplitude for more expressive movement
+                const wagAngle = this.tailWagAngle * 1.5;
+                
+                // Rotate around the base of the tail
+                ctx.translate(tailX, tailY);
+                ctx.rotate(wagAngle);
+                
+                // Draw a cooler, fluffier dog tail
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                
+                // Create an S-shaped curve for a more natural tail
+                ctx.bezierCurveTo(
+                    8, -12,
+                    20, -18,
+                    25, -8
+                );
+                
+                // Add volume to the tail with a second curve
+                ctx.lineTo(25, -6);
+                ctx.bezierCurveTo(
+                    22, -15,
+                    10, -5,
+                    0, 0
+                );
+                ctx.closePath();
+                
+                // Add a gradient to the tail for more dimension
+                const tailGradient = ctx.createLinearGradient(0, 0, 25, -8);
+                tailGradient.addColorStop(0, this.color); // Base color at tail root
+                tailGradient.addColorStop(1, '#6D4C41'); // Slightly darker at tip
+                ctx.fillStyle = tailGradient;
+                ctx.fill();
+                
+                ctx.strokeStyle = this.outlineColor;
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                
+                // Add some "fur" details to the tail
+                ctx.beginPath();
+                for (let i = 0; i < 5; i++) {
+                    const furX = 5 + (i * 4);
+                    const furY = -5 - (i * 1.5);
+                    const furLength = 2 + Math.random() * 3;
+                    ctx.moveTo(furX, furY);
+                    ctx.lineTo(furX + 1, furY - furLength);
+                }
+                ctx.strokeStyle = this.outlineColor;
+                ctx.lineWidth = 0.5;
+                ctx.stroke();
+                
+                ctx.restore();
+            }
+            
+            drawLegs(ctx, x, y) {
+                const walkOffset = Math.sin(this.walkCycle * Math.PI/2) * 2;
+                const legHeight = this.height/3.5; // Longer, more athletic legs
+                const legWidth = 5; // Slightly thinner
+                
+                // Use gradient for more dynamic coloring
+                const legGradient = ctx.createLinearGradient(0, y, 0, y + legHeight);
+                legGradient.addColorStop(0, this.color);
+                legGradient.addColorStop(1, '#5D4037'); // Darker near paws
+                
+                // Position legs with better spacing and create a walking animation
+                const drawLeg = (legX, frontLeg) => {
+                    const offset = this.isMoving ? (frontLeg ? walkOffset : -walkOffset) : 0;
+                    
+                    // Leg with subtle curve
+                    ctx.beginPath();
+                    ctx.moveTo(legX, y);
+                    ctx.quadraticCurveTo(
+                        legX + (frontLeg ? -2 : 2), 
+                        y + legHeight/2, 
+                        legX + offset, 
+                        y + legHeight
+                    );
+                    ctx.lineTo(legX + offset + legWidth, y + legHeight);
+                    ctx.quadraticCurveTo(
+                        legX + legWidth + (frontLeg ? -2 : 2), 
+                        y + legHeight/2, 
+                        legX + legWidth, 
+                        y
+                    );
+                    ctx.closePath();
+                    
+                    ctx.fillStyle = legGradient;
+                    ctx.fill();
+                    ctx.strokeStyle = this.outlineColor;
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                    
+                    // Draw paw
+                    ctx.fillStyle = '#3E2723'; // Very dark brown for paws
+                    ctx.beginPath();
+                    ctx.ellipse(
+                        legX + offset + legWidth/2, 
+                        y + legHeight + 2, 
+                        legWidth * 0.9, 
+                        legHeight * 0.1, 
+                        0, 0, Math.PI * 2
+                    );
+                    ctx.fill();
+                    
+                    // Draw toe details
+                    ctx.beginPath();
+                    for (let i = 0; i < 3; i++) {
+                        const toeX = legX + offset + legWidth/2 - legWidth*0.4 + (i * legWidth*0.4);
+                        ctx.moveTo(toeX, y + legHeight + 1);
+                        ctx.lineTo(toeX, y + legHeight + 3);
+                    }
+                    ctx.strokeStyle = '#1B0000';
+                    ctx.lineWidth = 0.5;
+                    ctx.stroke();
+                };
+                
+                // Draw legs in the correct order based on direction
+                if (this.direction === 'left') {
+                    // For left-facing, draw right legs (far side) first
+                    drawLeg(x + this.width * 0.4, false); // Back right
+                    drawLeg(x - this.width * 0.1, true);  // Front right
+                    drawLeg(x + this.width * 0.1, false); // Back left
+                    drawLeg(x - this.width * 0.4, true);  // Front left
+                } else {
+                    // For other directions, draw all legs
+                    drawLeg(x - this.width * 0.4, true);  // Front left
+                    drawLeg(x - this.width * 0.1, true);  // Front right
+                    drawLeg(x + this.width * 0.1, false); // Back left
+                    drawLeg(x + this.width * 0.4, false); // Back right
+                }
+            }
+            
+            drawDogHead(ctx, x, y) {
+                let headX = x;
+                let headY = y - this.height * 0.25;
+                
+                // Position head based on direction
+                switch(this.direction) {
+                    case 'left':
+                        headX = x - this.width * 0.6;
+                        break;
+                    case 'right':
+                        headX = x + this.width * 0.6;
+                        break;
+                    case 'up':
+                        headY = y - this.height * 0.3;
+                        break;
+                    case 'down':
+                        headY = y - this.height * 0.2;
+                        break;
+                }
+                
+                // Draw head - cooler dog-shaped head with better shading
+                ctx.beginPath();
+                ctx.arc(headX, headY, this.width * 0.28, 0, Math.PI * 2);
+                
+                // Create gradient for more dimension
+                const headGradient = ctx.createRadialGradient(
+                    headX - this.width * 0.05, 
+                    headY - this.width * 0.05, 
+                    this.width * 0.05,
+                    headX, 
+                    headY, 
+                    this.width * 0.28
+                );
+                headGradient.addColorStop(0, '#A1887F'); // Lighter highlight
+                headGradient.addColorStop(0.7, this.color);
+                headGradient.addColorStop(1, '#6D4C41'); // Darker edge
+                
+                ctx.fillStyle = headGradient;
+                ctx.fill();
+                ctx.strokeStyle = this.outlineColor;
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+                
+                // Draw ears first (so they go behind the eyes)
+                this.drawEars(ctx, headX, headY);
+                
+                // Draw snout
+                this.drawSnout(ctx, headX, headY);
+                
+                // Draw face (eyes) on top
+                this.drawFace(ctx, headX, headY);
+                
+                // If feeding, show food type above dog
+                if (this.activeFood) {
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.font = '14px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`${this.activeFood.type}`, headX, headY - this.width * 0.7);
+                }
+            }
+            
+            drawFace(ctx, x, y) {
+                // Draw eyes - make them more expressive
+                const eyeOffsetX = this.width * 0.12;
+                const eyeOffsetY = -this.width * 0.02; // Moved slightly up
+                const eyeSize = this.width * 0.06;
+                
+                // Add shading around eyes for definition
+                ctx.fillStyle = '#5D4037';
+                ctx.beginPath();
+                ctx.ellipse(x - eyeOffsetX, y + eyeOffsetY, eyeSize * 1.2, eyeSize * 1.1, 0, 0, Math.PI * 2);
+                ctx.ellipse(x + eyeOffsetX, y + eyeOffsetY, eyeSize * 1.2, eyeSize * 1.1, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Left eye
+                ctx.beginPath();
+                ctx.arc(x - eyeOffsetX, y + eyeOffsetY, eyeSize, 0, Math.PI * 2);
+                
+                // Add eye shine gradient
+                const eyeGradient = ctx.createRadialGradient(
+                    x - eyeOffsetX, y + eyeOffsetY, 0,
+                    x - eyeOffsetX, y + eyeOffsetY, eyeSize
+                );
+                eyeGradient.addColorStop(0, 'white');
+                eyeGradient.addColorStop(1, '#E0E0E0');
+                
+                ctx.fillStyle = eyeGradient;
+                ctx.fill();
+                ctx.strokeStyle = '#333333';
+                ctx.lineWidth = 0.5;
+                ctx.stroke();
+                
+                // Left pupil with movement based on direction
+                let pupilOffsetX = 0;
+                if (this.direction === 'left') pupilOffsetX = -eyeSize * 0.3;
+                if (this.direction === 'right') pupilOffsetX = eyeSize * 0.3;
+                
+                ctx.beginPath();
+                ctx.arc(x - eyeOffsetX + pupilOffsetX, y + eyeOffsetY, eyeSize * 0.5, 0, Math.PI * 2);
+                ctx.fillStyle = '#000000';
+                ctx.fill();
+                
+                // Pupil highlight for life-like appearance
+                ctx.beginPath();
+                ctx.arc(x - eyeOffsetX + pupilOffsetX - eyeSize * 0.15, y + eyeOffsetY - eyeSize * 0.15, eyeSize * 0.15, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                ctx.fill();
+                
+                // Right eye - same technique
+                ctx.beginPath();
+                ctx.arc(x + eyeOffsetX, y + eyeOffsetY, eyeSize, 0, Math.PI * 2);
+                ctx.fillStyle = eyeGradient;
+                ctx.fill();
+                ctx.strokeStyle = '#333333';
+                ctx.lineWidth = 0.5;
+                ctx.stroke();
+                
+                // Right pupil
+                ctx.beginPath();
+                ctx.arc(x + eyeOffsetX + pupilOffsetX, y + eyeOffsetY, eyeSize * 0.5, 0, Math.PI * 2);
+                ctx.fillStyle = '#000000';
+                ctx.fill();
+                
+                // Pupil highlight
+                ctx.beginPath();
+                ctx.arc(x + eyeOffsetX + pupilOffsetX - eyeSize * 0.15, y + eyeOffsetY - eyeSize * 0.15, eyeSize * 0.15, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                ctx.fill();
+                
+                // Add eyebrows for more expression
+                const eyebrowAngle = this.isMoving ? Math.PI * 0.1 : 0; // Slight angle when moving
+                
+                ctx.beginPath();
+                ctx.moveTo(x - eyeOffsetX - eyeSize, y + eyeOffsetY - eyeSize - 1);
+                ctx.lineTo(x - eyeOffsetX + eyeSize, y + eyeOffsetY - eyeSize - 1 + eyebrowAngle);
+                ctx.moveTo(x + eyeOffsetX - eyeSize, y + eyeOffsetY - eyeSize - 1 + eyebrowAngle);
+                ctx.lineTo(x + eyeOffsetX + eyeSize, y + eyeOffsetY - eyeSize - 1);
+                ctx.strokeStyle = '#5D4037';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+            }
+            
+            drawEars(ctx, x, y) {
+                // Draw cooler, floppier ears with better shape and shading
+                
+                // Left ear - use bezier curves for a natural floppy shape
+                ctx.beginPath();
+                ctx.moveTo(x - this.width * 0.15, y - this.width * 0.12);
+                
+                // Create ear shape with bezier curves for natural folds
+                ctx.bezierCurveTo(
+                    x - this.width * 0.25, y - this.width * 0.3, // Control point 1
+                    x - this.width * 0.45, y - this.width * 0.1, // Control point 2
+                    x - this.width * 0.35, y + this.width * 0.15  // End point
+                );
+                
+                ctx.bezierCurveTo(
+                    x - this.width * 0.3, y + this.width * 0.05, // Control point 1
+                    x - this.width * 0.2, y, // Control point 2
+                    x - this.width * 0.15, y - this.width * 0.05  // End point (connecting back)
+                );
+                
+                ctx.closePath();
+                
+                // Gradient for ear shading
+                const earGradient = ctx.createLinearGradient(
+                    x - this.width * 0.15, y - this.width * 0.12,
+                    x - this.width * 0.35, y + this.width * 0.15
+                );
+                earGradient.addColorStop(0, this.color);
+                earGradient.addColorStop(1, '#5D4037'); // Darker at the tips
+                
+                ctx.fillStyle = earGradient;
+                ctx.fill();
+                ctx.strokeStyle = this.outlineColor;
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                
+                // Right ear - mirror of left ear
+                ctx.beginPath();
+                ctx.moveTo(x + this.width * 0.15, y - this.width * 0.12);
+                
+                ctx.bezierCurveTo(
+                    x + this.width * 0.25, y - this.width * 0.3,
+                    x + this.width * 0.45, y - this.width * 0.1,
+                    x + this.width * 0.35, y + this.width * 0.15
+                );
+                
+                ctx.bezierCurveTo(
+                    x + this.width * 0.3, y + this.width * 0.05,
+                    x + this.width * 0.2, y,
+                    x + this.width * 0.15, y - this.width * 0.05
+                );
+                
+                ctx.closePath();
+                
+                // Gradient for right ear
+                const rightEarGradient = ctx.createLinearGradient(
+                    x + this.width * 0.15, y - this.width * 0.12,
+                    x + this.width * 0.35, y + this.width * 0.15
+                );
+                rightEarGradient.addColorStop(0, this.color);
+                rightEarGradient.addColorStop(1, '#5D4037');
+                
+                ctx.fillStyle = rightEarGradient;
+                ctx.fill();
+                ctx.strokeStyle = this.outlineColor;
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                
+                // Add ear detail lines for texture
+                ctx.beginPath();
+                
+                // Left ear details
+                ctx.moveTo(x - this.width * 0.2, y - this.width * 0.05);
+                ctx.quadraticCurveTo(
+                    x - this.width * 0.3, y,
+                    x - this.width * 0.25, y + this.width * 0.1
+                );
+                
+                // Right ear details
+                ctx.moveTo(x + this.width * 0.2, y - this.width * 0.05);
+                ctx.quadraticCurveTo(
+                    x + this.width * 0.3, y,
+                    x + this.width * 0.25, y + this.width * 0.1
+                );
+                
+                ctx.strokeStyle = '#6D4C41';
+                ctx.lineWidth = 0.7;
+                ctx.stroke();
+            }
+            
+            drawSnout(ctx, x, y) {
+                // Draw direction-dependent snout
+                let snoutX, snoutY, snoutWidth, snoutHeight, angle;
+                
+                switch(this.direction) {
+                    case 'left':
+                        snoutX = x - this.width * 0.28;
+                        snoutY = y + this.width * 0.12;
+                        snoutWidth = this.width * 0.3;
+                        snoutHeight = this.width * 0.18;
+                        angle = -Math.PI * 0.1; // Angled slightly upward
+                        break;
+                    case 'right':
+                        snoutX = x + this.width * 0.28;
+                        snoutY = y + this.width * 0.12;
+                        snoutWidth = this.width * 0.3;
+                        snoutHeight = this.width * 0.18;
+                        angle = Math.PI * 0.1;
+                        break;
+                    default: // up or down
+                        snoutX = x;
+                        snoutY = y + this.width * 0.2;
+                        snoutWidth = this.width * 0.25;
+                        snoutHeight = this.width * 0.22;
+                        angle = 0;
+                }
+                
+                // Save context for rotation
+                ctx.save();
+                ctx.translate(snoutX, snoutY);
+                ctx.rotate(angle);
+                
+                // Draw snout with gradient
+                const snoutGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, snoutWidth);
+                snoutGradient.addColorStop(0, '#A98274'); // Lighter brown in center
+                snoutGradient.addColorStop(1, '#8D6E63'); // Darker at edges
+                
+                ctx.fillStyle = snoutGradient;
+                ctx.beginPath();
+                
+                if (this.direction === 'left') {
+                    // Left-facing pointed snout
+                    ctx.ellipse(-snoutWidth * 0.2, 0, snoutWidth, snoutHeight, 0, 0, Math.PI * 2);
+                } else if (this.direction === 'right') {
+                    // Right-facing pointed snout
+                    ctx.ellipse(snoutWidth * 0.2, 0, snoutWidth, snoutHeight, 0, 0, Math.PI * 2);
+                } else {
+                    // Forward-facing snout
+                    ctx.ellipse(0, 0, snoutWidth, snoutHeight, 0, 0, Math.PI * 2);
+                }
+                
+                ctx.fill();
+                ctx.strokeStyle = '#6D4C41';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                
+                // Draw nose
+                let noseX, noseY;
+                if (this.direction === 'left') {
+                    noseX = -snoutWidth;
+                    noseY = -snoutHeight * 0.2;
+                } else if (this.direction === 'right') {
+                    noseX = snoutWidth;
+                    noseY = -snoutHeight * 0.2;
+                } else {
+                    noseX = 0;
+                    noseY = snoutHeight * 0.5;
+                }
+                
+                // Draw nose with gradient for wet look
+                const noseGradient = ctx.createRadialGradient(
+                    noseX, noseY, 0,
+                    noseX, noseY, this.width * 0.1
+                );
+                noseGradient.addColorStop(0, '#1A1A1A'); // Very dark in center
+                noseGradient.addColorStop(1, '#000000'); // Black at edges
+                
+                ctx.beginPath();
+                ctx.ellipse(noseX, noseY, this.width * 0.1, this.width * 0.07, 0, 0, Math.PI * 2);
+                ctx.fillStyle = noseGradient;
+                ctx.fill();
+                
+                // Add a shine to the nose
+                ctx.beginPath();
+                ctx.ellipse(
+                    noseX - this.width * 0.03, 
+                    noseY - this.width * 0.02, 
+                    this.width * 0.03, 
+                    this.width * 0.02, 
+                    Math.PI/4, 0, Math.PI * 2
+                );
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+                ctx.fill();
+                
+                // Draw mouth/muzzle details
+                ctx.beginPath();
+                
+                if (this.direction === 'left') {
+                    // Left-facing mouth
+                    ctx.moveTo(-snoutWidth * 0.9, 0);
+                    ctx.quadraticCurveTo(-snoutWidth * 0.5, snoutHeight * 0.4, 0, 0);
+                    
+                    // Add jowl line
+                    ctx.moveTo(-snoutWidth * 0.7, snoutHeight * 0.3);
+                    ctx.quadraticCurveTo(-snoutWidth * 0.4, snoutHeight * 0.6, -snoutWidth * 0.2, snoutHeight * 0.5);
+                } else if (this.direction === 'right') {
+                    // Right-facing mouth
+                    ctx.moveTo(snoutWidth * 0.9, 0);
+                    ctx.quadraticCurveTo(snoutWidth * 0.5, snoutHeight * 0.4, 0, 0);
+                    
+                    // Add jowl line
+                    ctx.moveTo(snoutWidth * 0.7, snoutHeight * 0.3);
+                    ctx.quadraticCurveTo(snoutWidth * 0.4, snoutHeight * 0.6, snoutWidth * 0.2, snoutHeight * 0.5);
+                } else {
+                    // Forward-facing mouth - curved smile
+                    ctx.moveTo(-snoutWidth * 0.5, snoutHeight * 0.1);
+                    ctx.quadraticCurveTo(0, snoutHeight * 0.5, snoutWidth * 0.5, snoutHeight * 0.1);
+                    
+                    // Add center line
+                    ctx.moveTo(0, snoutHeight * 0.5);
+                    ctx.lineTo(0, snoutHeight * 0.8);
+                }
+                
+                ctx.strokeStyle = '#5D4037';
+                ctx.lineWidth = 1.2;
+                ctx.stroke();
+                
+                // Restore context
+                ctx.restore();
             }
             
             // Check proximity to blob
@@ -2450,29 +3672,89 @@
                 const dx = this.foodCircle.x - blob.x;
                 const dy = this.foodCircle.y - blob.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
-                return distance < (this.foodCircle.radius + blob.radius);
+                
+                // Adjust collision detection to work with larger blob sizes
+                // Use the actual blob radius plus a fixed margin to ensure consistent feeding
+                const blobEffectiveRadius = blob.radius * 1.2;
+                
+                console.log('Food-blob distance:', distance, 'Blob radius:', blob.radius, 'Effective radius:', blobEffectiveRadius, 'Food radius:', this.foodCircle.radius);
+                
+                // Use a more generous collision margin to ensure feeding works reliably with the larger blob
+                return distance < (this.foodCircle.radius + blobEffectiveRadius + 15);
             }
-            
-            // Show a message above the person
-            showMessage(text, duration = 1500) {
-                if (!this.messages) this.messages = [];
-                this.messages.push({
-                    text: text,
-                    x: this.x,
-                    y: this.y - this.height - 20,
-                    alpha: 1.0,
-                    duration: duration,
-                    startTime: Date.now()
-                });
+
+            // Method to feed the blob
+            feedBlob() {
+                if (this.inventory.selectedItem && this.inventory.items[this.inventory.selectedItem]) {
+                    const selectedItem = this.inventory.items[this.inventory.selectedItem];
+                    
+                    // Get the target blob from the game
+                    const blob = window.gameInstance.blob;
+                    
+                    // Create a food object from the inventory item
+                    if (blob && this.activeFood) {
+                        // Save the item name before potentially removing it
+                        const itemName = selectedItem.name;
+                        
+                        // Remove one item from inventory
+                        if (this.inventory.removeItem(itemName, 1)) {
+                            console.log('Fed blob with:', itemName);
+                            // Call the blob's method to consume the food and track evolution
+                            const didEvolve = blob.consumePersonFood(this.activeFood);
+                            
+                            // Force refresh the inventory display regardless of evolution
+                            setTimeout(() => {
+                                // Trigger inventory update
+                                const event = new CustomEvent('inventorySelectionChanged', {
+                                    detail: {
+                                        selectedItem: this.inventory.selectedItem,
+                                        previousSelectedItem: this.inventory.selectedItem
+                                    }
+                                });
+                                window.dispatchEvent(event);
+                                console.log('Forced inventory refresh after feeding');
+                            }, 50);
+                            
+                            // If we've run out of the selected item, clear selection and feeding state
+                            if (!this.inventory.items[itemName]) {
+                                this.inventory.selectedItem = null;
+                                this.activeFood = null;
+                                this.isFeeding = false;
+                                this.showMessage("Out of food!");
+                            }
+                        } else {
+                            console.log('Failed to remove item from inventory');
+                            this.showMessage("Out of food!");
+                            this.activeFood = null;
+                            this.isFeeding = false;
+                        }
+                    }
+                } else if (this.isFeeding) {
+                    // Handle case where feeding is active but no valid selection exists
+                    this.showMessage("Select food from inventory first!");
+                    this.activeFood = null;
+                    this.isFeeding = false;
+                }
             }
-            
+
             // Update and draw messages
             updateMessages() {
-                if (!this.messages) return;
+                if (!this.messages || !Array.isArray(this.messages)) {
+                    this.messages = [];
+                    return;
+                }
+                
                 const now = Date.now();
                 
                 for (let i = this.messages.length - 1; i >= 0; i--) {
                     const message = this.messages[i];
+                    
+                    // Check if message has all required properties
+                    if (!message || !message.startTime) {
+                        this.messages.splice(i, 1);
+                        continue;
+                    }
+                    
                     const elapsed = now - message.startTime;
                     
                     if (elapsed >= message.duration) {
@@ -2483,55 +3765,52 @@
                     }
                 }
             }
-            
+
             drawMessages(ctx, cameraX, cameraY) {
-                if (!this.messages || this.messages.length === 0) return;
+                // Check if messages array exists
+                if (!this.messages || !Array.isArray(this.messages)) {
+                    this.messages = [];
+                    return;
+                }
                 
-                ctx.save();
+                // First, make sure we don't have more than 5 messages at once to prevent clutter
+                if (this.messages.length > 5) {
+                    // Keep only the 5 newest messages
+                    this.messages = this.messages.slice(-5);
+                }
+                
                 ctx.textAlign = 'center';
                 ctx.font = '14px Arial';
                 
-                this.messages.forEach(message => {
+                // Create a small offset for message positions to prevent overlap
+                let messageOffset = 0;
+                
+                this.messages.forEach((message, index) => {
+                    // Calculate screen position for the message
                     const screenX = message.x - cameraX;
-                    const screenY = message.y - cameraY;
+                    const screenY = message.y - cameraY - (messageOffset * index);
                     
+                    // Draw message with fading effect
                     ctx.fillStyle = `rgba(255, 255, 255, ${message.alpha})`;
                     ctx.strokeStyle = `rgba(0, 0, 0, ${message.alpha})`;
-                    ctx.lineWidth = 3;
+                    ctx.lineWidth = 2;
                     
-                    ctx.strokeText(message.text, screenX, screenY);
+                    // Draw text stroke for better visibility, using a shadow instead of stroke
+                    ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+                    ctx.shadowBlur = 4;
+                    ctx.shadowOffsetX = 0;
+                    ctx.shadowOffsetY = 0;
+                    
+                    // Draw main text
                     ctx.fillText(message.text, screenX, screenY);
+                    
+                    // Reset shadow to prevent it from affecting other drawing operations
+                    ctx.shadowColor = 'transparent';
+                    ctx.shadowBlur = 0;
                 });
                 
-                ctx.restore();
-            }
-
-            drawFace(ctx, x, y) {
-                ctx.fillStyle = '#000000';
-                
-                // Draw eyes and mouth based on direction
-                if (this.direction === 'left') {
-                    // Left-facing eyes and mouth
-                    ctx.fillRect(x - 12, y - 5, 4, 4); // Left eye
-                    ctx.fillRect(x - 5, y + 5, 8, 2); // Mouth
-                } else if (this.direction === 'right') {
-                    // Right-facing eyes and mouth
-                    ctx.fillRect(x + 8, y - 5, 4, 4); // Right eye
-                    ctx.fillRect(x - 3, y + 5, 8, 2); // Mouth
-                } else {
-                    // Front-facing eyes and mouth
-                    ctx.fillRect(x - 8, y - 5, 4, 4); // Left eye
-                    ctx.fillRect(x + 4, y - 5, 4, 4); // Right eye
-                    ctx.fillRect(x - 5, y + 5, 10, 2); // Mouth
-                }
-                
-                // Draw currently selected food above person
-                if (this.activeFood) {
-                    ctx.fillStyle = '#FFFFFF';
-                    ctx.font = '14px Arial';
-                    ctx.textAlign = 'center';
-                    ctx.fillText(`${this.activeFood.type}`, x, y - 15);
-                }
+                // Reset text alignment
+                ctx.textAlign = 'left';
             }
         }
 
@@ -2859,6 +4138,174 @@
             }
         }
 
+        // KeyDisplay class to show active keys
+        class KeyDisplay {
+            constructor() {
+                // Set up key tracking with name, pressed state, and cooldown timer
+                this.keys = {
+                    // Movement keys - Person
+                    'KeyW': { name: 'W', pressed: false, timer: 0 },
+                    'KeyA': { name: 'A', pressed: false, timer: 0 },
+                    'KeyS': { name: 'S', pressed: false, timer: 0 },
+                    'KeyD': { name: 'D', pressed: false, timer: 0 },
+                    
+                    // Movement keys - Blob
+                    'ArrowUp': { name: '↑', pressed: false, timer: 0 },
+                    'ArrowLeft': { name: '←', pressed: false, timer: 0 },
+                    'ArrowDown': { name: '↓', pressed: false, timer: 0 },
+                    'ArrowRight': { name: '→', pressed: false, timer: 0 },
+                    
+                    // Action keys
+                    'KeyQ': { name: 'Q', pressed: false, timer: 0 },
+                    'KeyG': { name: 'G', pressed: false, timer: 0 },
+                    'KeyP': { name: 'P', pressed: false, timer: 0 },
+                    'KeyR': { name: 'R', pressed: false, timer: 0 }
+                };
+                
+                // Cooldown time for key display in milliseconds
+                this.cooldownTime = 300;
+                
+                // Last update time for calculating delta time
+                this.lastUpdateTime = Date.now();
+                
+                // Set up event listeners
+                this.setupListeners();
+            }
+            
+            setupListeners() {
+                // Add event listeners for keydown and keyup
+                window.addEventListener('keydown', (e) => {
+                    if (this.keys[e.code]) {
+                        this.keys[e.code].pressed = true;
+                        this.keys[e.code].timer = this.cooldownTime; // Reset timer on key press
+                    }
+                });
+                
+                window.addEventListener('keyup', (e) => {
+                    if (this.keys[e.code]) {
+                        this.keys[e.code].pressed = false;
+                        // Don't reset timer here, let it count down naturally for visual feedback
+                    }
+                });
+            }
+            
+            update() {
+                const now = Date.now();
+                const deltaTime = now - this.lastUpdateTime;
+                this.lastUpdateTime = now;
+                
+                // Update timers for all keys
+                for (const key in this.keys) {
+                    if (this.keys[key].timer > 0) {
+                        this.keys[key].timer = Math.max(0, this.keys[key].timer - deltaTime);
+                    }
+                }
+            }
+            
+            draw(ctx, canvasWidth, canvasHeight) {
+                // Set up dimensions and positioning - reduce panel size to match other OSDs
+                const keySize = 24; // Reduced from 32 
+                const keyMargin = 6; // Reduced from 8
+                const padding = 10;
+                const panelWidth = 220; // Reduced from 280
+                const panelHeight = 130; // Reduced from 160
+                
+                // Position in the bottom right corner
+                const panelX = canvasWidth - panelWidth - padding;
+                const panelY = canvasHeight - panelHeight - padding;
+                
+                // Draw semi-transparent background
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
+                
+                // Draw panel title
+                ctx.fillStyle = 'white';
+                ctx.font = '12px Arial'; // Reduced from 14px to match other OSDs
+                ctx.textAlign = 'center';
+                ctx.fillText('Key Display', panelX + panelWidth / 2, panelY + 16);
+                
+                // Draw key groups with more horizontal space between them and better margins
+                this.drawWASDKeys(ctx, panelX + 50, panelY + 35, keySize, keyMargin); // Adjusted positions
+                this.drawArrowKeys(ctx, panelX + 150, panelY + 35, keySize, keyMargin); // Adjusted positions
+                
+                // Center action keys
+                const actionKeysX = panelX + (panelWidth - (keySize * 2 + keyMargin)) / 2;
+                this.drawActionKeys(ctx, actionKeysX, panelY + 95, keySize, keyMargin); // Adjusted Y position
+                
+                // Reset text alignment
+                ctx.textAlign = 'left';
+            }
+            
+            drawWASDKeys(ctx, x, y, keySize, margin) {
+                // W key (top)
+                this.drawKey(ctx, x, y, keySize, 'KeyW');
+                
+                // A, S, D keys (bottom row)
+                this.drawKey(ctx, x - keySize - margin, y + keySize + margin, keySize, 'KeyA');
+                this.drawKey(ctx, x, y + keySize + margin, keySize, 'KeyS');
+                this.drawKey(ctx, x + keySize + margin, y + keySize + margin, keySize, 'KeyD');
+            }
+            
+            drawArrowKeys(ctx, x, y, keySize, margin) {
+                // Up arrow (top)
+                this.drawKey(ctx, x, y, keySize, 'ArrowUp');
+                
+                // Left, Down, Right arrows (bottom row)
+                this.drawKey(ctx, x - keySize - margin, y + keySize + margin, keySize, 'ArrowLeft');
+                this.drawKey(ctx, x, y + keySize + margin, keySize, 'ArrowDown');
+                this.drawKey(ctx, x + keySize + margin, y + keySize + margin, keySize, 'ArrowRight');
+            }
+            
+            drawActionKeys(ctx, x, y, keySize, margin) {
+                // Only show Q and P keys
+                const actionKeys = ['KeyQ', 'KeyP'];
+                let xPos = x;
+                
+                // Draw action keys in a row
+                actionKeys.forEach(keyCode => {
+                    this.drawKey(ctx, xPos, y, keySize, keyCode);
+                    xPos += keySize + margin;
+                });
+            }
+            
+            drawKey(ctx, x, y, size, keyCode) {
+                const key = this.keys[keyCode];
+                const isActive = key.pressed || key.timer > 0;
+                
+                // Draw key background
+                if (isActive) {
+                    // Bright background for active keys
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 1)';
+                } else {
+                    // Dark background for inactive keys
+                    ctx.fillStyle = 'rgba(50, 50, 50, 0.8)';
+                    ctx.strokeStyle = 'rgba(150, 150, 150, 0.8)';
+                }
+                
+                // Draw key rectangle with rounded corners
+                ctx.beginPath();
+                ctx.roundRect(x, y, size, size, 4);
+                ctx.fill();
+                ctx.lineWidth = 1; // Reduced from 2 to 1
+                ctx.stroke();
+                
+                // Draw key label with smaller font
+                ctx.font = '10px Arial'; // Reduced from 12px to 10px
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                
+                if (isActive) {
+                    ctx.fillStyle = 'rgba(0, 0, 0, 1)'; // Dark text for active keys
+                } else {
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)'; // Light text for inactive keys
+                }
+                
+                ctx.fillText(key.name, x + size / 2, y + size / 2);
+                ctx.textBaseline = 'alphabetic'; // Reset text baseline
+            }
+        }
+
         // Game class
         class Game {
             constructor() {
@@ -2867,6 +4314,16 @@
                     this.canvas = new Canvas();
                     console.log('Canvas created');
                     
+                    // Add keyboard listener for restart (R key)
+                    window.addEventListener('keydown', (e) => {
+                        if (e.code === 'KeyR' && this.blob && this.blob.isDead) {
+                            console.log('R key pressed - attempting restart');
+                            this.blob.resetBlob();
+                            const overlay = document.getElementById('deathOverlay');
+                            if (overlay) overlay.remove();
+                        }
+                    });
+
                     this.world = new World(this.canvas.canvas);
                     console.log('World created');
                     
@@ -2874,7 +4331,8 @@
                     const worldSize = this.world.biomeManager.getWorldSize();
                     this.blob = new Blob(
                         worldSize.width / 2,
-                        worldSize.height / 2
+                        worldSize.height / 2,
+                        this.world  // Pass world reference to blob
                     );
                     console.log('Blob created with stats:', this.blob.stats);
                     
@@ -2889,9 +4347,18 @@
                     // Create a person
                     this.person = new Person(
                         worldSize.width / 2 - 200,
-                        worldSize.height / 2
+                        worldSize.height / 2,
+                        this.world  // Pass world reference to person
                     );
                     console.log('Person created');
+                    
+                    // Create key display
+                    this.keyDisplay = new KeyDisplay();
+                    console.log('Key display created');
+                    
+                    // Ensure person and blob messages are initialized
+                    if (!this.person.messages) this.person.messages = [];
+                    if (!this.blob.messages) this.blob.messages = [];
                     
                     // Set up the person's feed function
                     this.person.feedBlob = () => {
@@ -2906,23 +4373,68 @@
 
                                 console.log('Feeding blob:', this.person.activeFood);
                                 
+                                // Save the item name before removing it
+                                const itemName = selectedItem.name;
+                                
+                                // Deep clone the person's inventory before feeding to avoid cross-contamination
+                                const personInventoryBeforeFeeding = JSON.parse(JSON.stringify(this.person.inventory.items));
+                                
                                 // Remove one item from inventory
-                                this.person.inventory.removeItem(selectedItem.name, 1);
-                                
-                                // Only feed if item was successfully removed
-                                this.blob.consumePersonFood(this.person.activeFood);
-                                
-                                // If blob is not a pet yet, check if it's tamed after feeding
-                                if (!this.blob.isPet && this.blob.tamingProgress >= 100) {
-                                    this.blob.isPet = true;
-                                    this.blob.owner = this.person;
-                                }
+                                if (this.person.inventory.removeItem(itemName, 1)) {
+                                    console.log(`Successfully removed 1 ${itemName} from inventory`);
+                                    
+                                    // Only feed if item was successfully removed
+                                    const didEvolve = this.blob.consumePersonFood(this.person.activeFood);
+                                    
+                                    // If blob is not a pet yet, check if it's tamed after feeding
+                                    if (!this.blob.isPet && this.blob.tamingProgress >= 100) {
+                                        this.blob.isPet = true;
+                                        this.blob.owner = this.person;
+                                    }
 
-                                // Stop feeding if we run out of items
-                                if (!this.person.inventory.items[this.person.inventory.selectedItem]) {
+                                    // Make sure the person's inventory wasn't affected by blob's evolution
+                                    const personInventoryAfterFeeding = this.person.inventory.items;
+                                    for (const itemName in personInventoryBeforeFeeding) {
+                                        // For any item that was not the fed item, ensure its quantity didn't change
+                                        if (itemName !== selectedItem.name) {
+                                            const beforeQty = personInventoryBeforeFeeding[itemName].quantity;
+                                            if (personInventoryAfterFeeding[itemName] && 
+                                                personInventoryAfterFeeding[itemName].quantity !== beforeQty) {
+                                                // Restore the original quantity
+                                                personInventoryAfterFeeding[itemName].quantity = beforeQty;
+                                            }
+                                        }
+                                    }
+
+                                    // Force UI update regardless of evolution status to prevent inventory freeze
+                                    // This is crucial to fix the inventory update issue
+                                    setTimeout(() => {
+                                        console.log('Forcing inventory refresh after feeding');
+                                        const event = new CustomEvent('inventorySelectionChanged', {
+                                            detail: {
+                                                selectedItem: this.person.inventory.selectedItem,
+                                                previousSelectedItem: this.person.inventory.selectedItem
+                                            }
+                                        });
+                                        window.dispatchEvent(event);
+                                    }, 50);
+
+                                    // If we've run out of the current item, clear feeding state
+                                    if (!this.person.inventory.items[itemName] || 
+                                        !this.person.inventory.items[this.person.inventory.selectedItem]) {
+                                        this.person.activeFood = null;
+                                        this.person.isFeeding = false;
+                                        this.person.inventory.selectedItem = null;
+                                        this.person.showMessage("Out of food!");
+                                    }
+                                } else {
+                                    console.log('Failed to remove item from inventory');
+                                    this.person.showMessage("Out of food!");
                                     this.person.activeFood = null;
                                     this.person.isFeeding = false;
                                 }
+                            } else {
+                                this.person.showMessage("No food selected!");
                             }
                         }
                     };
@@ -2956,6 +4468,11 @@
                     this.statsDisplay = new StatsDisplay(this.canvas.canvas);
                     console.log('Stats display created');
                     
+                    // Perform initial draw to make sure blob is visible from the start
+                    this.draw();
+                    console.log('Initial draw completed');
+                    
+                    // Now start the game loop
                     this.gameLoop();
                     console.log('Game loop started');
                 } catch (error) {
@@ -2981,12 +4498,35 @@
                         this.world.biomeManager
                     );
                     
+                    // Update key display
+                    this.keyDisplay.update();
+                    
                     // Check for food collisions
                     this.foodManager.checkCollisions(this.blob);
                     
                     // Check if the food circle is touching the blob (continuous feeding)
-                    if (this.person.isFeeding && this.person.isFoodTouchingBlob(this.blob)) {
-                        this.person.feedBlob();
+                    if (this.person.isFeeding) {
+                        // More reliably check if food is touching blob, with debug output
+                        const isTouching = this.person.isFoodTouchingBlob(this.blob);
+                        
+                        if (isTouching) {
+                            console.log('Food circle is touching blob - feeding');
+                            this.person.feedBlob();
+                        }
+                    }
+                    
+                    // Periodically refresh inventory display if items are selected
+                    // This helps prevent UI from freezing after evolution
+                    if (!this.lastInventoryRefresh || Date.now() - this.lastInventoryRefresh > 1000) {
+                        // Trigger a refresh regardless of whether there's a selected item
+                        const event = new CustomEvent('inventorySelectionChanged', {
+                            detail: {
+                                selectedItem: this.person.inventory.selectedItem,
+                                previousSelectedItem: this.person.inventory.selectedItem
+                            }
+                        });
+                        window.dispatchEvent(event);
+                        this.lastInventoryRefresh = Date.now();
                     }
                     
                     // Update camera to follow person or blob based on selection
@@ -3021,22 +4561,38 @@
                         if (!food.collected && this.person.isCollectingFood(food)) {
                             // Add to person's inventory
                             if (food.inventoryItem) {
-                                // Create a new instance of the inventory item
+                                // Create a new instance of the inventory item with the SAME NAME as the food type
                                 const newItem = new InventoryItem(
                                     food.inventoryItem.type,
-                                    food.inventoryItem.name,
+                                    food.type, // Use food.type directly instead of food.inventoryItem.name
                                     food.inventoryItem.description,
                                     food.inventoryItem.rarity,
-                                    food.inventoryItem.drawIcon  // Pass the drawing function
+                                    food.inventoryItem.drawIcon
                                 );
                                 newItem.quantity = 1; // Ensure quantity is set to 1
                                 
+                                // Use a separate method for person collection to avoid affecting blob inventory
                                 const success = this.person.inventory.addItem(newItem);
                                 if (success) {
+                                    // Mark as collected but don't invoke blob collection behavior
                                     food.collected = true;
                                     console.log('Person collected:', food.type, 'Current inventory:', this.person.inventory.items);
+                                    
                                     // Show a message to indicate collection
                                     this.person.showMessage(`Collected ${food.type}`);
+                                    
+                                    // Important: make sure this doesn't impact blob's inventory
+                                    // by forcing a refresh of both inventories with a slight delay
+                                    setTimeout(() => {
+                                        // Trigger an inventory update event to refresh the UI
+                                        const event = new CustomEvent('inventorySelectionChanged', {
+                                            detail: {
+                                                selectedItem: this.person.inventory.selectedItem,
+                                                previousSelectedItem: this.person.inventory.selectedItem
+                                            }
+                                        });
+                                        window.dispatchEvent(event);
+                                    }, 50);
                                 } else {
                                     console.log('Inventory full!');
                                     this.person.showMessage('Inventory full!');
@@ -3084,7 +4640,7 @@
                         this.world.cameraY
                     );
                     
-                    // Draw stats
+                    // Draw UI elements
                     this.statsDisplay.draw(
                         this.canvas.ctx, 
                         this.blob.stats, 
@@ -3094,6 +4650,13 @@
                     
                     // Draw controls information
                     this.drawControlsInfo();
+                    
+                    // Draw key display
+                    this.keyDisplay.draw(
+                        this.canvas.ctx,
+                        this.canvas.canvas.width,
+                        this.canvas.canvas.height
+                    );
                 } catch (error) {
                     console.error('Error in draw:', error);
                     console.error('Error details:', error.message);
@@ -3103,43 +4666,60 @@
             drawControlsInfo() {
                 const ctx = this.canvas.ctx;
                 ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                ctx.fillRect(this.canvas.canvas.width - 250, 10, 240, 240); // Increased height
+                // Adjust controls panel size and position for mobile format
+                ctx.fillRect(this.canvas.canvas.width - 170, 10, 160, 130); // Reduced width from 240 to 160
                 
                 ctx.fillStyle = '#FFFFFF';
-                ctx.font = '14px Arial';
+                ctx.font = '12px Arial'; // Reduced font size from 14px to 12px
                 ctx.textAlign = 'left';
-                ctx.fillText('Controls:', this.canvas.canvas.width - 240, 30);
-                ctx.fillText('WASD - Move person', this.canvas.canvas.width - 240, 50);
-                ctx.fillText('Arrow Keys - Move blob', this.canvas.canvas.width - 240, 70);
-                ctx.fillText('1-4 - Select food', this.canvas.canvas.width - 240, 90);
-                ctx.fillText('Q - Feed blob (circle food)', this.canvas.canvas.width - 240, 110);
-                ctx.fillText('G - Toggle collection mode', this.canvas.canvas.width - 240, 130);
-                ctx.fillText('B - Toggle build mode', this.canvas.canvas.width - 240, 150);
-                ctx.fillText('N - Cycle building types', this.canvas.canvas.width - 240, 170);
-                ctx.fillText('M - Place selected building', this.canvas.canvas.width - 240, 190);
-                ctx.fillText('P - Toggle camera focus', this.canvas.canvas.width - 240, 210);
+                ctx.fillText('Controls:', this.canvas.canvas.width - 160, 30);
+                ctx.fillText('WASD - Move person', this.canvas.canvas.width - 160, 50);
+                ctx.fillText('Arrow Keys - Move blob', this.canvas.canvas.width - 160, 70);
+                ctx.fillText('Q - Feed blob', this.canvas.canvas.width - 160, 90);
+                ctx.fillText('P - Toggle camera', this.canvas.canvas.width - 160, 110);
                 
-                // Show current camera focus
+                // Show current camera focus - shortened text
                 ctx.fillStyle = '#FFC107'; // Yellow for highlighting
-                ctx.fillText(`Camera following: ${this.followPerson ? 'Person' : 'Blob'}`, 
-                            this.canvas.canvas.width - 240, 230);
+                ctx.fillText(`Following: ${this.followPerson ? 'Person' : 'Blob'}`, 
+                            this.canvas.canvas.width - 160, 130);
                 
-                // Reset alignment
+                // Reset text alignment
                 ctx.textAlign = 'left';
             }
 
             gameLoop() {
-                this.update();
-                this.draw();
-                requestAnimationFrame(() => this.gameLoop());
+                try {
+                    this.update();
+                    this.draw();
+                    requestAnimationFrame(() => this.gameLoop());
+                } catch (error) {
+                    console.error('Error in game loop:', error);
+                }
             }
         }
 
         // Start the game when the window loads
         window.onload = () => {
-            console.log('Window loaded, starting game...');
-            new Game();
+            try {
+                console.log('Window loaded, starting game...');
+                window.gameInstance = new Game();
+                console.log('Game initialized successfully');
+            } catch (error) {
+                console.error('Failed to initialize game:', error);
+            }
         };
+
+        // Add global restart function
+        function restartGame() {
+            console.log('Global restart function called');
+            if (window.gameInstance && window.gameInstance.blob) {
+                console.log('Resetting blob...');
+                window.gameInstance.blob.resetBlob();
+                return true;
+            }
+            console.log('No game instance found');
+            return false;
+        }
     </script>
 </body>
 </html> 
